@@ -1,0 +1,6 @@
+{
+  "name": "Gestão de Vigilâncias de Exames",
+  "description": "Plataforma profissional para gestão de vigilâncias de exames nacionais: planeamento de professores, salas, alocações automáticas, relatórios, controlo administrativo e multi-idioma.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

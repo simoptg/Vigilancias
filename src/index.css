@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Global utility classes & print media layouts */
+@media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
+  header, aside, .print\:hidden {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #report_manager {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .print\:border-0 {
+    border: none !important;
+  }
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+  .print\:p-0 {
+    padding: 0 !important;
+  }
+}

@@ -1,0 +1,50 @@
+import { VercelRequest, VercelResponse } from '@vercel/node';
+import { sql } from '../api/utils/db';
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const { method } = req;
+
+  try {
+    switch (method) {
+      case 'GET':
+        const { rows: allocations } = await sql`SELECT * FROM allocations`;
+        const mappedAllocations = allocations.map(a => ({
+          ...a,
+          examId: a.exam_id,
+          roomId: a.room_id,
+          invigilator1Id: a.invigilator1_id,
+          invigilator2Id: a.invigilator2_id,
+          substituteId: a.substitute_id
+        }));
+        return res.status(200).json(mappedAllocations);
+
+      case 'POST':
+        const { id, examId, roomId, invigilator1Id, invigilator2Id, substituteId } = req.body;
+        await sql`
+          INSERT INTO allocations (id, exam_id, room_id, invigilator1_id, invigilator2_id, substitute_id)
+          VALUES (${id}, ${examId}, ${roomId}, ${invigilator1Id}, ${invigilator2Id}, ${substituteId})
+          ON CONFLICT (id) DO UPDATE SET
+            exam_id = EXCLUDED.exam_id,
+            room_id = EXCLUDED.room_id,
+            invigilator1_id = EXCLUDED.invigilator1_id,
+            invigilator2_id = EXCLUDED.invigilator2_id,
+            substitute_id = EXCLUDED.substitute_id
+        `;
+        return res.status(201).json({ message: 'Allocation saved' });
+
+      case 'DELETE':
+        const { examId: deleteExamId } = req.query;
+        if (deleteExamId) {
+          await sql`DELETE FROM allocations WHERE exam_id = ${deleteExamId as string}`;
+        }
+        return res.status(200).json({ message: 'Allocations deleted' });
+
+      default:
+        res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
+        return res.status(405).end(`Method ${method} Not Allowed`);
+    }
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
