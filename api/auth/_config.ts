@@ -2,9 +2,12 @@ import GoogleProvider from "next-auth/providers/google";
 import { sql } from "../utils/db.js";
 import { AuthOptions } from "next-auth";
 
+// @ts-ignore
+const Google = typeof GoogleProvider === 'function' ? GoogleProvider : GoogleProvider.default;
+
 export const authOptions: AuthOptions = {
   providers: [
-    GoogleProvider({
+    Google({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     }),
