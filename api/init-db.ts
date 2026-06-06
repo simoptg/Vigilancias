@@ -76,6 +76,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     `;
 
+    const defaultRooms = [
+      'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17',
+      'B21', 'B22', 'B23', 'B24', 'B25', 'B26', 'B27'
+    ];
+
+    for (const roomName of defaultRooms) {
+      await sql`
+        INSERT INTO rooms (id, name, capacity, floor)
+        VALUES (${roomName}, ${roomName}, 15, 'B')
+        ON CONFLICT (id) DO NOTHING
+      `;
+    }
+
     await sql`
       CREATE TABLE IF NOT EXISTS exams (
           id TEXT PRIMARY KEY,
