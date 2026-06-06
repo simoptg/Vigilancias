@@ -59,6 +59,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     `;
 
+    // 6. FORCE ALTER TABLE to allow NULL emails (in case table already existed)
+    try {
+      await sql`ALTER TABLE teachers ALTER COLUMN email DROP NOT NULL`;
+      console.log("Forced NULL constraint drop on teachers.email");
+    } catch (e) {
+      console.log("Alter table email might have failed or already applied", e);
+    }
+
     await sql`
       CREATE TABLE IF NOT EXISTS rooms (
           id TEXT PRIMARY KEY,
