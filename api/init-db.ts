@@ -3,7 +3,11 @@ import { sql } from './utils/db.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    // Create tables
+    // 1. Drop existing tables if needed (to ensure clean slate for structural changes)
+    // Comentado para segurança, mas útil se houver conflitos de schema
+    // await sql`DROP TABLE IF EXISTS allocations, exams, rooms, teachers, teacher_roles, AuthorizedUsers CASCADE`;
+
+    // 2. Create teacher_roles FIRST (no dependencies)
     await sql`
       CREATE TABLE IF NOT EXISTS teacher_roles (
           id TEXT PRIMARY KEY,
@@ -11,7 +15,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     `;
 
-    // Inserir roles iniciais
+    // 3. Inserir roles iniciais
     const initialRoles = [
       'Coordenador', 'Juri de PAP', 'Classificadores Básico', 'Classificadores Secundário', 
       'Direção', 'Inventário Mediateca', 'Matriculas', 'Bibliotecária', 
@@ -29,6 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `;
     }
 
+    // 4. Create AuthorizedUsers (no dependencies)
     await sql`
       CREATE TABLE IF NOT EXISTS AuthorizedUsers ( 
         id SERIAL PRIMARY KEY, 
@@ -39,6 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     `;
 
+    // 5. Create teachers (depends on teacher_roles)
     await sql`
       CREATE TABLE IF NOT EXISTS teachers (
           id TEXT PRIMARY KEY,
