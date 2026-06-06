@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS teachers (
     subject_group TEXT NOT NULL,
     subject TEXT NOT NULL,
     role TEXT REFERENCES teacher_roles(id),
-    email TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE,
     phone TEXT,
     available BOOLEAN DEFAULT TRUE,
     unavailabilities JSONB DEFAULT '[]'::jsonb

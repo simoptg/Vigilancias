@@ -18,10 +18,12 @@ import {
   Bell,
   MessageSquare,
   Send,
-  Loader2
+  Loader2,
+  FileText
 } from 'lucide-react';
 import { hasSubjectConflict, getPeriodFromTime } from '../utils/scheduler';
 import { api } from '../utils/api';
+import * as XLSX from 'xlsx';
 
 interface AdminDashboardProps {
   lang: Language;
@@ -32,6 +34,7 @@ interface AdminDashboardProps {
   notificationsLog: NotificationLog[];
   onAutoTrigger: () => void;
   onClearAllocations: () => void;
+  onRefreshData: () => void;
 }
 
 export default function AdminDashboard({
@@ -42,7 +45,8 @@ export default function AdminDashboard({
   allocations,
   notificationsLog,
   onAutoTrigger,
-  onClearAllocations
+  onClearAllocations,
+  onRefreshData
 }: AdminDashboardProps) {
   const t = translations[lang];
 
@@ -50,6 +54,123 @@ export default function AdminDashboard({
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // Import State
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImportMapaGeral = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets["Mapa Geral"];
+        
+        if (!ws) {
+          alert(lang === 'pt' ? 'Folha "Mapa Geral" não encontrada no Excel!' : '"Mapa Geral" sheet not found in Excel!');
+          setIsImporting(false);
+          return;
+        }
+
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        
+        const importedTeachers: any[] = [];
+        const importedExams: any[] = [];
+        const importedRoles: any[] = [];
+        const roleNamesSet = new Set<string>();
+
+        // 1. Encontrar Exames (Procurar na linha 6 e acima)
+        // Estrutura: Data na linha 4/5, Hora e Nome na linha 6
+        // Percorrer colunas a partir da coluna E (index 4)
+        for (let col = 4; col < data[5]?.length; col++) {
+          const examCell = data[5][col]; // Linha 6 (index 5)
+          if (examCell && typeof examCell === 'string' && examCell.includes('(')) {
+            // Tentar achar a data no row acima (linha 5)
+            let dateStr = "";
+            for (let r = 4; r >= 0; r--) {
+              if (data[r][col]) {
+                dateStr = String(data[r][col]).trim();
+                break;
+              }
+            }
+
+            // Exemplo: "8:45 Português Língua Não Materna (839)"
+            const timeMatch = examCell.match(/(\d{1,2}:\d{2})/);
+            const time = timeMatch ? timeMatch[1] : "09:00";
+            const name = examCell.replace(time, '').trim();
+            const subject = name.split('(')[0].trim();
+            
+            importedExams.push({
+              id: `ex_${col}`,
+              name: name,
+              subject: subject,
+              date: dateStr || "2026-06-15", // Fallback
+              time: time
+            });
+          }
+        }
+
+        // 2. Encontrar Teachers (A partir da linha 7)
+        for (let row = 6; row < data.length; row++) {
+          const groupCell = data[row][0]; // Coluna A
+          const nameCell = data[row][1];  // Coluna B
+          const roleCell = data[row][2];  // Coluna C
+
+          if (nameCell && groupCell) {
+            // "300 - Português" -> group: 300, subject: Português
+            const groupParts = String(groupCell).split('-').map(s => s.trim());
+            const subjectGroup = groupParts[0] || "300";
+            const subject = groupParts[1] || "Geral";
+            
+            const teacherName = String(nameCell).trim();
+            const roleName = roleCell ? String(roleCell).trim() : "Professor";
+            const roleId = roleName.toLowerCase().replace(/\s+/g, '_');
+
+            if (!roleNamesSet.has(roleId)) {
+              importedRoles.push({ id: roleId, name: roleName });
+              roleNamesSet.add(roleId);
+            }
+
+            importedTeachers.push({
+              id: `t_${row}`,
+              name: teacherName,
+              subject_group: subjectGroup,
+              subject: subject,
+              role: roleId,
+              email: null // Email não existe no Excel
+            });
+          }
+        }
+
+        // 3. Enviar para a API
+        const result = await api.import.mapaGeral({
+          teachers: importedTeachers,
+          exams: importedExams,
+          roles: importedRoles
+        });
+
+        alert(lang === 'pt' 
+          ? `Importação concluída: ${result.stats.teachers} professores e ${result.stats.exams} exames.` 
+          : `Import finished: ${result.stats.teachers} teachers and ${result.stats.exams} exams.`);
+        
+        onRefreshData();
+      } catch (err) {
+        console.error('Import error:', err);
+        alert('Erro ao processar o ficheiro Excel.');
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
 
   const handleAskAI = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,6 +292,21 @@ export default function AdminDashboard({
           </p>
         </div>
         <div className="flex gap-2.5">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-indigo-700/10 cursor-pointer disabled:opacity-50"
+          >
+            {isImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            <span>{lang === 'pt' ? 'Importar Mapa Geral' : 'Import General Map'}</span>
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportMapaGeral}
+            accept=".xlsx"
+            className="hidden"
+          />
           <button
             onClick={onAutoTrigger}
             className="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-blue-700/10 cursor-pointer"

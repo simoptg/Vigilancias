@@ -397,6 +397,28 @@ export default function App() {
   };
 
   // Trigger automation globally (for all exams!)
+  const handleRefreshData = async () => {
+    setIsLoading(true);
+    try {
+      const [tData, rData, eData, aData, nData] = await Promise.all([
+        api.teachers.getAll(),
+        api.rooms.getAll(),
+        api.exams.getAll(),
+        api.allocations.getAll(),
+        api.notifications.getAll()
+      ]);
+      setTeachers(tData);
+      setRooms(sortRooms(rData));
+      setExams(eData);
+      setAllocations(aData);
+      setNotificationsLog(nData);
+    } catch (err) {
+      console.error('Error refreshing data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAutoTriggerAll = async () => {
     for (const ex of exams) {
       const examCurrentAllocs = allocations.filter(a => a.examId === ex.id);
@@ -831,16 +853,17 @@ export default function App() {
             >
               {/* Load Panel dynamically corresponding to active tab */}
               {activeTab === 'dashboard' && session.role === 'admin' && (
-                <AdminDashboard
-                  lang={lang}
-                  teachers={teachers}
-                  rooms={rooms}
-                  exams={exams}
-                  allocations={allocations}
-                  notificationsLog={notificationsLog}
-                  onAutoTrigger={handleAutoTriggerAll}
-                  onClearAllocations={handleClearAllocationsAll}
-                />
+                  <AdminDashboard
+                    lang={lang}
+                    teachers={teachers}
+                    rooms={rooms}
+                    exams={exams}
+                    allocations={allocations}
+                    notificationsLog={notificationsLog}
+                    onAutoTrigger={handleAutoTriggerAll}
+                    onClearAllocations={handleClearAllocationsAll}
+                    onRefreshData={handleRefreshData}
+                  />
               )}
 
               {activeTab === 'users' && session.role === 'admin' && (
