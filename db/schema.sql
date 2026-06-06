@@ -8,12 +8,17 @@ CREATE TABLE IF NOT EXISTS AuthorizedUsers (
    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() 
  );
 
+CREATE TABLE IF NOT EXISTS teacher_roles (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS teachers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     subject_group TEXT NOT NULL,
     subject TEXT NOT NULL,
-    role TEXT NOT NULL,
+    role TEXT REFERENCES teacher_roles(id),
     email TEXT UNIQUE NOT NULL,
     phone TEXT,
     available BOOLEAN DEFAULT TRUE,

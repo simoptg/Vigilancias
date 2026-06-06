@@ -30,6 +30,7 @@ import BackupLogs from './components/BackupLogs';
 import NotificationCenter from './components/NotificationCenter';
 import ExamRoomManager from './components/ExamRoomManager';
 import UserManager from './components/UserManager';
+import RoleManager from './components/RoleManager';
 
 // Icons
 import { 
@@ -44,7 +45,8 @@ import {
   LogOut, 
   Globe,
   Layers,
-  Lock
+  Lock,
+  Tag
 } from 'lucide-react';
 
 import { SchoolShipIcon } from './components/SchoolLogo';
@@ -637,6 +639,19 @@ export default function App() {
               <span>{t.tabTeachers}</span>
             </button>
 
+            {/* Tab: Roles */}
+            <button
+              onClick={() => setActiveTab('roles')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                activeTab === 'roles' 
+                  ? 'bg-blue-50 text-blue-800 border-l-4 border-blue-600' 
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Tag className="h-4 w-4" />
+              <span>{lang === 'pt' ? 'Cargos' : 'Roles'}</span>
+            </button>
+
             {/* Tab: Rooms */}
             <button
               onClick={() => setActiveTab('rooms')}
@@ -843,6 +858,12 @@ export default function App() {
                   onDeleteTeacher={handleDeleteTeacher}
                   onClearAllTeachers={handleClearAllTeachers}
                   onBulkImport={handleBulkImportTeachers}
+                />
+              )}
+
+              {activeTab === 'roles' && (
+                <RoleManager
+                  lang={lang}
                 />
               )}
 

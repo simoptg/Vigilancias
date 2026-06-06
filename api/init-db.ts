@@ -5,6 +5,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // Create tables
     await sql`
+      CREATE TABLE IF NOT EXISTS teacher_roles (
+          id TEXT PRIMARY KEY,
+          name TEXT UNIQUE NOT NULL
+      );
+    `;
+
+    // Inserir roles iniciais
+    const initialRoles = [
+      'Coordenador', 'Juri de PAP', 'Classificadores Básico', 'Classificadores Secundário', 
+      'Direção', 'Inventário Mediateca', 'Matriculas', 'Bibliotecária', 
+      'Rececão de Portáteis', 'AP', 'Manuais', 'Turmas', 'Atestado Médico', 
+      'Coordenadora de curso', 'Avaliação Interna', 'Técnica esp.', 'P.I.R', 
+      'Enes', 'TE', 'Secretariado', 'Out', 'Horários', 'EE', 'Agrupamento'
+    ];
+
+    for (const roleName of initialRoles) {
+      const roleId = roleName.toLowerCase().replace(/\s+/g, '_');
+      await sql`
+        INSERT INTO teacher_roles (id, name)
+        VALUES (${roleId}, ${roleName})
+        ON CONFLICT (id) DO NOTHING
+      `;
+    }
+
+    await sql`
       CREATE TABLE IF NOT EXISTS AuthorizedUsers ( 
         id SERIAL PRIMARY KEY, 
         email TEXT UNIQUE NOT NULL, 
@@ -20,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           name TEXT NOT NULL,
           subject_group TEXT NOT NULL,
           subject TEXT NOT NULL,
-          role TEXT NOT NULL,
+          role TEXT REFERENCES teacher_roles(id),
           email TEXT UNIQUE NOT NULL,
           phone TEXT,
           available BOOLEAN DEFAULT TRUE,

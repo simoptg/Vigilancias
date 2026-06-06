@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Teacher, Language } from '../types';
 import { translations } from '../translations';
+import { api } from '../utils/api';
 import { 
   Plus, 
   Upload, 
@@ -57,10 +58,25 @@ export default function TeacherManager({
   const [name, setName] = useState('');
   const [subjectGroup, setSubjectGroup] = useState('300');
   const [subject, setSubject] = useState('');
-  const [role, setRole] = useState('Professor');
+  const [role, setRole] = useState('professor');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [available, setAvailable] = useState(true);
+
+  // Roles state for dropdown
+  const [availableRoles, setAvailableRoles] = useState<{id: string, name: string}[]>([]);
+
+  useEffect(() => {
+    const fetchRoles = async () => {
+      try {
+        const rolesData = await api.roles.getAll();
+        setAvailableRoles(rolesData);
+      } catch (err) {
+        console.error('Error loading roles for dropdown:', err);
+      }
+    };
+    fetchRoles();
+  }, [isModalOpen]);
 
   // CSV Drag state
   const [isDragOver, setIsDragOver] = useState(false);
@@ -449,7 +465,7 @@ export default function TeacherManager({
                     <td className="px-5 py-3">{tc.subject}</td>
                     <td className="px-5 py-3">
                       <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-medium">
-                        {tc.role}
+                        {availableRoles.find(r => r.id === tc.role)?.name || tc.role}
                       </span>
                     </td>
                     <td className="px-5 py-3 font-mono text-slate-500">{tc.email}</td>
@@ -568,13 +584,16 @@ export default function TeacherManager({
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
                     {t.role}
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={role}
                     onChange={(e) => setRole(e.target.value)}
-                    placeholder="ex. Professor, Diretor Turma, Coordenador, ..."
-                    className="w-full border border-slate-200 rounded-lg px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                  />
+                    className="w-full border border-slate-200 rounded-lg px-3.5 py-2 text-xs text-slate-800 bg-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="">{lang === 'pt' ? 'Selecionar Cargo...' : 'Select Role...'}</option>
+                    {availableRoles.map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">

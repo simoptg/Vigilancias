@@ -1,0 +1,283 @@
+import React, { useState, useEffect } from 'react';
+import { Language } from '../types';
+import { 
+  Tag, 
+  Plus, 
+  Trash2, 
+  Edit2, 
+  Download, 
+  Upload, 
+  AlertCircle, 
+  CheckCircle2, 
+  Loader2,
+  X
+} from 'lucide-react';
+import { api } from '../utils/api';
+
+interface Role {
+  id: string;
+  name: string;
+}
+
+interface RoleManagerProps {
+  lang: Language;
+}
+
+export default function RoleManager({ lang }: RoleManagerProps) {
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Form states
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
+  const [roleName, setRoleName] = useState('');
+  const [importText, setImportText] = useState('');
+  const [showImport, setShowImport] = useState(false);
+
+  const fetchRoles = async () => {
+    try {
+      setIsLoading(true);
+      const data = await api.roles.getAll();
+      setRoles(data);
+    } catch (err) {
+      console.error('Error fetching roles:', err);
+      setError(lang === 'pt' ? 'Erro ao carregar cargos.' : 'Error loading roles.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRoles();
+  }, []);
+
+  const handleSaveRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roleName.trim()) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await api.roles.save({
+        id: editingRole?.id,
+        name: roleName.trim()
+      });
+      setSuccess(lang === 'pt' ? 'Cargo guardado com sucesso!' : 'Role saved successfully!');
+      setRoleName('');
+      setEditingRole(null);
+      fetchRoles();
+    } catch (err) {
+      setError(lang === 'pt' ? 'Erro ao guardar cargo.' : 'Error saving role.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteRole = async (id: string, name: string) => {
+    if (!window.confirm(lang === 'pt' ? `Tem a certeza que deseja eliminar o cargo "${name}"?` : `Are you sure you want to delete role "${name}"?`)) return;
+
+    try {
+      const res = await api.roles.delete(id);
+      if (res.error) {
+        setError(res.error);
+      } else {
+        setSuccess(lang === 'pt' ? 'Cargo eliminado.' : 'Role deleted.');
+        fetchRoles();
+      }
+    } catch (err) {
+      setError(lang === 'pt' ? 'Erro ao eliminar cargo. Verifique se existem professores associados.' : 'Error deleting role. Check if teachers are assigned.');
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importText.trim()) return;
+    
+    setIsSubmitting(true);
+    setError('');
+    const lines = importText.split('\n').filter(l => l.trim());
+    let count = 0;
+
+    try {
+      for (const line of lines) {
+        await api.roles.save({ name: line.trim() });
+        count++;
+      }
+      setSuccess(lang === 'pt' ? `${count} cargos importados com sucesso!` : `${count} roles imported successfully!`);
+      setImportText('');
+      setShowImport(false);
+      fetchRoles();
+    } catch (err) {
+      setError(lang === 'pt' ? 'Erro parcial na importação.' : 'Partial error during import.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-sm border border-slate-800 flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
+            <Tag className="h-5 w-5 text-blue-400" />
+            {lang === 'pt' ? 'Gestão de Cargos / Funções' : 'Role / Function Management'}
+          </h2>
+          <p className="text-slate-400 text-xs">
+            {lang === 'pt' 
+              ? 'Defina os cargos que podem ser atribuídos aos professores.' 
+              : 'Define roles that can be assigned to teachers.'}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowImport(!showImport)}
+          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition border border-slate-700"
+        >
+          {showImport ? <X className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+          {showImport ? (lang === 'pt' ? 'Cancelar' : 'Cancel') : (lang === 'pt' ? 'Importar Texto' : 'Import Text')}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Form Column */}
+        <div className="md:col-span-1">
+          {showImport ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-6">
+              <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Upload className="h-4 w-4 text-blue-600" />
+                {lang === 'pt' ? 'Importação Rápida' : 'Quick Import'}
+              </h3>
+              <p className="text-[10px] text-slate-500 mb-3">
+                {lang === 'pt' ? 'Insira um cargo por linha:' : 'Insert one role per line:'}
+              </p>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                rows={10}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition font-mono"
+                placeholder="Coordenador&#10;Direção&#10;Secretariado..."
+              />
+              <button
+                onClick={handleImport}
+                disabled={isSubmitting || !importText.trim()}
+                className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition disabled:opacity-50"
+              >
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {lang === 'pt' ? 'Processar Importação' : 'Process Import'}
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-6">
+              <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                {editingRole ? <Edit2 className="h-4 w-4 text-amber-500" /> : <Plus className="h-4 w-4 text-blue-600" />}
+                {editingRole 
+                  ? (lang === 'pt' ? 'Editar Cargo' : 'Edit Role') 
+                  : (lang === 'pt' ? 'Novo Cargo' : 'New Role')}
+              </h3>
+              
+              <form onSubmit={handleSaveRole} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1.5">{lang === 'pt' ? 'Nome do Cargo' : 'Role Name'}</label>
+                  <input
+                    type="text"
+                    required
+                    value={roleName}
+                    onChange={(e) => setRoleName(e.target.value)}
+                    placeholder="Ex: Coordenador"
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition"
+                  />
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-lg text-xs">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                {success && (
+                  <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-lg text-xs">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>{success}</span>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition disabled:opacity-50"
+                  >
+                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    {editingRole ? (lang === 'pt' ? 'Atualizar' : 'Update') : (lang === 'pt' ? 'Adicionar' : 'Add')}
+                  </button>
+                  {editingRole && (
+                    <button
+                      type="button"
+                      onClick={() => { setEditingRole(null); setRoleName(''); }}
+                      className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+
+        {/* List Column */}
+        <div className="md:col-span-2">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-slate-800">{lang === 'pt' ? 'Lista de Cargos' : 'Roles List'}</h3>
+              <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+                {roles.length} {lang === 'pt' ? 'Cargos' : 'Roles'}
+              </span>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {isLoading ? (
+                <div className="p-12 flex flex-col items-center justify-center text-slate-400">
+                  <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                  <span className="text-xs">{lang === 'pt' ? 'A carregar cargos...' : 'Loading roles...'}</span>
+                </div>
+              ) : roles.length === 0 ? (
+                <div className="p-12 text-center text-slate-400">
+                  <p className="text-xs">{lang === 'pt' ? 'Nenhum cargo definido.' : 'No roles defined.'}</p>
+                </div>
+              ) : (
+                roles.map((role) => (
+                  <div key={role.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition group">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                        <Tag className="h-4 w-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-slate-700">{role.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                      <button
+                        onClick={() => { setEditingRole(role); setRoleName(role.name); }}
+                        className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRole(role.id, role.name)}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
