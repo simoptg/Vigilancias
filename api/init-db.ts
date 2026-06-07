@@ -6,12 +6,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 0. Ensure extension for UUID exists
     await sql`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`;
 
-    // 1. Drop existing tables if needed
-    await sql`DROP TABLE IF EXISTS allocations CASCADE`;
-    await sql`DROP TABLE IF EXISTS exams CASCADE`;
-    await sql`DROP TABLE IF EXISTS teachers CASCADE`;
-    await sql`DROP TABLE IF EXISTS rooms CASCADE`;
-    await sql`DROP TABLE IF EXISTS teacher_roles CASCADE`;
+    // 1. Drop existing tables if needed (ONLY if mode=reset is provided)
+    const mode = req.query.mode;
+    if (mode === 'reset') {
+      await sql`DROP TABLE IF EXISTS allocations CASCADE`;
+      await sql`DROP TABLE IF EXISTS exams CASCADE`;
+      await sql`DROP TABLE IF EXISTS teachers CASCADE`;
+      await sql`DROP TABLE IF EXISTS rooms CASCADE`;
+      await sql`DROP TABLE IF EXISTS teacher_roles CASCADE`;
+    }
+
+    // 1b. Migration/Repair (Always run to ensure columns exist)
+    await sql`ALTER TABLE exams ADD COLUMN IF NOT EXISTS duration INTEGER NOT NULL DEFAULT 120`;
+    await sql`ALTER TABLE exams ADD COLUMN IF NOT EXISTS tolerance INTEGER NOT NULL DEFAULT 30`;
+    await sql`ALTER TABLE exams ADD COLUMN IF NOT EXISTS rooms_needed INTEGER NOT NULL DEFAULT 1`;
+    await sql`ALTER TABLE exams ADD COLUMN IF NOT EXISTS room_ids JSONB DEFAULT '[]'::jsonb`;
+    await sql`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0`;
 
     // 2. Create teacher_roles FIRST (no dependencies)
     await sql`
