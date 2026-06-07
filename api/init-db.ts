@@ -73,7 +73,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
           name TEXT UNIQUE NOT NULL,
           capacity INTEGER NOT NULL DEFAULT 15,
-          floor TEXT
+          floor TEXT,
+          priority INTEGER DEFAULT 0
       );
     `;
 
@@ -82,11 +83,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'B21', 'B22', 'B23', 'B24', 'B25', 'B26', 'B27'
     ];
 
-    for (const roomName of defaultRooms) {
+    for (let i = 0; i < defaultRooms.length; i++) {
+      const roomName = defaultRooms[i];
       await sql`
-        INSERT INTO rooms (name, capacity, floor)
-        VALUES (${roomName}, 15, ${roomName.startsWith('B1') ? '1' : '2'})
-        ON CONFLICT (name) DO UPDATE SET capacity = EXCLUDED.capacity, floor = EXCLUDED.floor
+        INSERT INTO rooms (name, capacity, floor, priority)
+        VALUES (${roomName}, 15, ${roomName.startsWith('B1') ? '1' : '2'}, ${i + 1})
+        ON CONFLICT (name) DO UPDATE SET capacity = EXCLUDED.capacity, floor = EXCLUDED.floor, priority = EXCLUDED.priority
       `;
     }
 

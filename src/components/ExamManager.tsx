@@ -68,6 +68,7 @@ export default function ExamManager({
 
   // Form states
   const [name, setName] = useState('');
+  const [subjectGroup, setSubjectGroup] = useState('300');
   const [variant, setVariant] = useState<string | null>(null);
   const [year, setYear] = useState('12');
   const [code, setCode] = useState('');
@@ -80,6 +81,7 @@ export default function ExamManager({
   const handleOpenAdd = () => {
     setEditingExam(null);
     setName('');
+    setSubjectGroup('300');
     setVariant(null);
     setYear('12');
     setCode('');
@@ -94,6 +96,7 @@ export default function ExamManager({
   const handleOpenEdit = (ex: Exam) => {
     setEditingExam(ex);
     setName(ex.name);
+    setSubjectGroup(ex.subject_group);
     setVariant(ex.variant || null);
     setYear(ex.year);
     setCode(ex.code || '');
@@ -107,7 +110,7 @@ export default function ExamManager({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !year || !date || !time || !phase) {
+    if (!name || !subjectGroup || !year || !date || !time || !phase) {
       alert('Por favor, informe todos os campos obrigatórios.');
       return;
     }
@@ -116,6 +119,7 @@ export default function ExamManager({
       onUpdateExam({
         ...editingExam,
         name,
+        subject_group: subjectGroup,
         variant,
         year,
         code,
@@ -129,6 +133,7 @@ export default function ExamManager({
       onAddExam({
         id: crypto.randomUUID(),
         name,
+        subject_group: subjectGroup,
         variant,
         year,
         code,
@@ -406,6 +411,13 @@ export default function ExamManager({
                   <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="ex. Português" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500" />
                 </div>
                 <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Grupo Disciplinar *</label>
+                  <input type="text" required value={subjectGroup} onChange={(e) => setSubjectGroup(e.target.value)} placeholder="ex. 300" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 sm:col-span-1">
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Ano Escolar *</label>
                   <select value={year} onChange={(e) => setYear(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 bg-white">
                     <option value="9">9º Ano</option>
@@ -413,9 +425,16 @@ export default function ExamManager({
                     <option value="12">12º Ano</option>
                   </select>
                 </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Fase *</label>
+                  <select value={phase} onChange={(e) => setPhase(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 bg-white">
+                    <option value="1">1ª Fase</option>
+                    <option value="2">2ª Fase</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Código</label>
                   <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="ex. 639" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500" />
@@ -423,13 +442,6 @@ export default function ExamManager({
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Variante</label>
                   <input type="text" value={variant || ''} onChange={(e) => setVariant(e.target.value || null)} placeholder="ex. A, LNM" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Fase *</label>
-                  <select value={phase} onChange={(e) => setPhase(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 bg-white">
-                    <option value="1">1ª Fase</option>
-                    <option value="2">2ª Fase</option>
-                  </select>
                 </div>
               </div>
 

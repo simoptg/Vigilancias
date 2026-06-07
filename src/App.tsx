@@ -11,7 +11,6 @@ import {
   Room, 
   Exam, 
   Allocation, 
-  NotificationLog, 
   Language, 
   UserSession 
 } from './types';
@@ -27,7 +26,7 @@ import ExamManager from './components/ExamManager';
 import AllocationManager from './components/AllocationManager';
 import ReportManager from './components/ReportManager';
 import BackupLogs from './components/BackupLogs';
-import NotificationCenter from './components/NotificationCenter';
+import NotificationSender from './components/NotificationSender';
 import ExamRoomManager from './components/ExamRoomManager';
 import UserManager from './components/UserManager';
 import RoleManager from './components/RoleManager';
@@ -67,7 +66,6 @@ export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
-  const [notificationsLog, setNotificationsLog] = useState<NotificationLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // NextAuth Session
@@ -98,12 +96,11 @@ export default function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [tData, rData, eData, aData, nData] = await Promise.all([
+        const [tData, rData, eData, aData] = await Promise.all([
           api.teachers.getAll(),
           api.rooms.getAll(),
           api.exams.getAll(),
-          api.allocations.getAll(),
-          api.notifications.getAll()
+          api.allocations.getAll()
         ]);
         
         // Ensure data is array before setting state
@@ -111,7 +108,6 @@ export default function App() {
         setRooms(Array.isArray(rData) ? sortRooms(rData) : []);
         setExams(Array.isArray(eData) ? eData : []);
         setAllocations(Array.isArray(aData) ? aData : []);
-        setNotificationsLog(Array.isArray(nData) ? nData : []);
       } catch (error) {
         console.error('Error fetching data:', error);
         // Reset to empty arrays on error to avoid .forEach errors
@@ -119,7 +115,6 @@ export default function App() {
         setRooms([]);
         setExams([]);
         setAllocations([]);
-        setNotificationsLog([]);
       } finally {
         setIsLoading(false);
       }
@@ -146,18 +141,13 @@ export default function App() {
     setActiveTab('dashboard');
   };
 
-  // Bulk Teachers Import CSV action
-  const handleBulkImportTeachers = async (newTeachers: Teacher[]) => {
-    // Avoid duplicate emails
-    const existingEmails = new Set(teachers.map(t => t.email?.toLowerCase() || ''));
-    const uniques = newTeachers.filter(t => t.email && !existingEmails.has(t.email.toLowerCase()));
-    
-    for (const t of uniques) {
-      await api.teachers.save(t);
+  const handleClearAllTeachers = async () => {
+    try {
+      await api.teachers.deleteAll();
+      handleRefreshData();
+    } catch (err) {
+      console.error('Error clearing all teachers:', err);
     }
-    
-    const updatedTeachers = await api.teachers.getAll();
-    setTeachers(updatedTeachers);
   };
 
   // Manual update handlers
@@ -173,10 +163,6 @@ export default function App() {
     await api.teachers.delete(id);
     setTeachers(prev => prev.filter(t => t.id !== id));
   };
-  const handleClearAllTeachers = async () => {
-    await api.teachers.deleteAll();
-    setTeachers([]);
-  };
 
   const handleAddRoom = async (room: Room) => {
     await api.rooms.save(room);
@@ -189,6 +175,11 @@ export default function App() {
   const handleDeleteRoom = async (id: string) => {
     await api.rooms.delete(id);
     setRooms(prev => sortRooms(prev.filter(r => r.id !== id)));
+  };
+
+  const handleUpdateAllRooms = async (updatedRooms: Room[]) => {
+    await api.rooms.updateAll(updatedRooms);
+    setRooms(sortRooms(updatedRooms));
   };
 
   const handleAddExam = async (exam: Exam) => {
@@ -210,107 +201,14 @@ export default function App() {
   const handleUpdateAllocation = async (updatedAlloc: Allocation) => {
     await api.allocations.save(updatedAlloc);
     setAllocations(prev => {
-      const exists = prev.some(a => a.id === updatedAlloc.id);
-      if (exists) {
-        return prev.map(a => a.id === updatedAlloc.id ? updatedAlloc : a);
-      } else {
-        return [...prev, updatedAlloc];
-      }
-    });
-
-    // Generate notification alerts for assigned staff
-    const triggerNotifsForAssignement = async (roleVal: 'invigilator1Id' | 'invigilator2Id' | 'substituteId', labelPt: string, labelEn: string) => {
-      const teacherId = updatedAlloc[roleVal];
-      if (!teacherId) return;
-
-      const teacher = teachers.find(t => t.id === teacherId);
-      const exam = exams.find(e => e.id === updatedAlloc.examId);
-      const room = rooms.find(r => r.id === updatedAlloc.roomId);
-
-      if (teacher && exam && room) {
-        const timeStr = new Date().toLocaleTimeString(lang === 'pt' ? 'pt-PT' : 'en-US', { hour: '2-digit', minute: '2-digit' });
-        
-        const isSub = roleVal === 'substituteId';
-        const ptRole = isSub ? 'Professor Suplente (Reserva Geral)' : labelPt;
-        const enRole = isSub ? 'General Standby Substitute' : labelEn;
-
-        const ptMsg = isSub
-          ? `Foi convocado como Professor Suplente (Reserva Geral) para o exame de ${exam.name} no dia ${exam.date} às ${exam.time}. Deve apresentar-se no Secretariado.`
-          : `Foi alocado como ${ptRole} na ${room.name} para o exame de ${exam.name} no dia ${exam.date} às ${exam.time}.`;
-          
-        const enMsg = isSub
-          ? `You have been convocated as a Standby Substitute (General Reserve) for the ${exam.name} exam on ${exam.date} at ${exam.time}. Please report to the central desk (Secretariado).`
-          : `You have been allocated as ${enRole} in ${room.name} for the ${exam.name} exam on ${exam.date} at ${exam.time}.`;
-
-        const newLog: NotificationLog = {
-          id: `n_trigger_${Date.now()}_${Math.floor(Math.random()*1000)}`,
-          timestamp: timeStr,
-          recipientEmail: teacher.email || '',
-          recipientName: teacher.name,
-          title: lang === 'pt' ? 'Alteração Escalar de Vigilância' : 'Invigilation Schedule Update',
-          message: lang === 'pt' ? ptMsg : enMsg,
-          sentVia: 'email',
-          read: false
-        };
-
-        await api.notifications.save(newLog);
-        setNotificationsLog(prevNot => [...prevNot, newLog]);
-      }
+        const exists = prev.some(a => a.id === updatedAlloc.id);
+        if (exists) {
+          return prev.map(a => a.id === updatedAlloc.id ? updatedAlloc : a);
+        } else {
+          return [...prev, updatedAlloc];
+        }
+      });
     };
-
-    const oldAlloc = allocations.find(a => a.id === updatedAlloc.id);
-    if (!oldAlloc) {
-      triggerNotifsForAssignement('invigilator1Id', 'Vigilante 1', 'Invigilator 1');
-      triggerNotifsForAssignement('invigilator2Id', 'Vigilante 2', 'Invigilator 2');
-      triggerNotifsForAssignement('substituteId', 'Suplente', 'Substitute');
-    } else {
-      if (updatedAlloc.invigilator1Id !== oldAlloc.invigilator1Id) {
-        triggerNotifsForAssignement('invigilator1Id', 'Vigilante 1', 'Invigilator 1');
-      }
-      if (updatedAlloc.invigilator2Id !== oldAlloc.invigilator2Id) {
-        triggerNotifsForAssignement('invigilator2Id', 'Vigilante 2', 'Invigilator 2');
-      }
-      if (updatedAlloc.substituteId !== oldAlloc.substituteId) {
-        triggerNotifsForAssignement('substituteId', 'Suplente', 'Substitute');
-      }
-    }
-  };
-
-  const handleAddNotificationLog = async (notif: NotificationLog) => {
-    await api.notifications.save(notif);
-    setNotificationsLog(prev => [...prev, notif]);
-  };
-
-  const handleMarkAsRead = async (id: string) => {
-    const notification = notificationsLog.find(n => n.id === id);
-    if (notification) {
-      const updated = { ...notification, read: true };
-      await api.notifications.save(updated);
-      setNotificationsLog(prev => prev.map(n => n.id === id ? updated : n));
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    if (session) {
-      const promises = notificationsLog.map(n => {
-        const isRecipient = n.recipientEmail && session.email && n.recipientEmail.toLowerCase() === session.email.toLowerCase();
-        if (!n.read && (session.role === 'admin' || isRecipient)) {
-          return api.notifications.save({ ...n, read: true });
-        }
-        return null;
-      }).filter(p => p !== null);
-
-      await Promise.all(promises);
-
-      setNotificationsLog(prev => prev.map(n => {
-        const isRecipient = n.recipientEmail && session.email && n.recipientEmail.toLowerCase() === session.email.toLowerCase();
-        if (session.role === 'admin' || isRecipient) {
-          return { ...n, read: true };
-        }
-        return n;
-      }));
-    }
-  };
 
   const handleAutoTriggerForExam = async (examId: string) => {
     const examObj = exams.find(e => e.id === examId);
@@ -320,7 +218,7 @@ export default function App() {
     const examRooms = examObj.roomIds && examObj.roomIds.length > 0
       ? rooms.filter(r => examObj.roomIds?.includes(r.id))
       : rooms;
-    const result = autoAllocate(examObj, examRooms, teachers, allocations, examCurrentAllocs);
+    const result = autoAllocate(examObj, examRooms, teachers, allocations, examCurrentAllocs, exams);
 
     await Promise.all(result.allocations.map(alloc => api.allocations.save(alloc)));
 
@@ -328,27 +226,6 @@ export default function App() {
       const filtered = prev.filter(a => a.examId !== examId);
       return [...filtered, ...result.allocations];
     });
-
-    const timeStr = new Date().toLocaleTimeString(lang === 'pt' ? 'pt-PT' : 'en-US', { hour: '2-digit', minute: '2-digit' });
-    const formattedLogs: NotificationLog[] = result.notifications.map((log, index) => {
-      const teacher = teachers.find(t => t.id === log.teacherId)!;
-      return {
-        id: `n_auto_${Date.now()}_${index}`,
-        timestamp: timeStr,
-        recipientEmail: teacher.email || '',
-        recipientName: teacher.name,
-        title: lang === 'pt' ? 'Atribuição Automática de Escala' : 'Auto Allocation Notification',
-        message: log.message,
-        sentVia: 'email',
-        read: false
-      };
-    });
-
-    await Promise.all(formattedLogs.map(log => api.notifications.save(log)));
-
-    if (formattedLogs.length > 0) {
-      setNotificationsLog(prev => [...prev, ...formattedLogs]);
-    }
 
     alert(t.automaticSuccess);
   };
@@ -361,18 +238,16 @@ export default function App() {
   const handleRefreshData = async () => {
     setIsLoading(true);
     try {
-      const [tData, rData, eData, aData, nData] = await Promise.all([
+      const [tData, rData, eData, aData] = await Promise.all([
         api.teachers.getAll(),
         api.rooms.getAll(),
         api.exams.getAll(),
-        api.allocations.getAll(),
-        api.notifications.getAll()
+        api.allocations.getAll()
       ]);
       setTeachers(Array.isArray(tData) ? tData : []);
       setRooms(Array.isArray(rData) ? sortRooms(rData) : []);
       setExams(Array.isArray(eData) ? eData : []);
       setAllocations(Array.isArray(aData) ? aData : []);
-      setNotificationsLog(Array.isArray(nData) ? nData : []);
     } catch (err) {
       console.error('Error refreshing data:', err);
       // Ensure we don't break the UI with non-array data
@@ -380,7 +255,6 @@ export default function App() {
       setRooms([]);
       setExams([]);
       setAllocations([]);
-      setNotificationsLog([]);
     } finally {
       setIsLoading(false);
     }
@@ -390,39 +264,20 @@ export default function App() {
     setIsLoading(true);
     try {
       const allNewAllocations: Allocation[] = [];
-      const allNewLogs: NotificationLog[] = [];
 
       for (const ex of exams) {
         const examCurrentAllocs = allocations.filter(a => a.examId === ex.id);
         const examRooms = ex.roomIds && ex.roomIds.length > 0
           ? rooms.filter(r => ex.roomIds?.includes(r.id))
           : rooms;
-        const result = autoAllocate(ex, examRooms, teachers, allocations, examCurrentAllocs);
+        const result = autoAllocate(ex, examRooms, teachers, allocations, examCurrentAllocs, exams);
         
         allNewAllocations.push(...result.allocations);
-
-        const timeStr = new Date().toLocaleTimeString();
-        const logsToAppend: NotificationLog[] = result.notifications.map((log, i) => {
-          const t = teachers.find(p => p.id === log.teacherId)!;
-          return {
-            id: `n_auto_${Date.now()}_${i}_${ex.id}`,
-            timestamp: timeStr,
-            recipientEmail: t.email || '',
-            recipientName: t.name,
-            title: lang === 'pt' ? 'Escala Automática Central' : 'Central Roster Scale Auto-Allot',
-            message: log.message,
-            sentVia: 'email',
-            read: false
-          };
-        });
-        allNewLogs.push(...logsToAppend);
       }
 
       await Promise.all(allNewAllocations.map(alloc => api.allocations.save(alloc)));
-      await Promise.all(allNewLogs.map(log => api.notifications.save(log)));
 
       setAllocations(allNewAllocations);
-      setNotificationsLog(prev => [...prev, ...allNewLogs]);
 
       alert(t.automaticSuccess);
     } catch (err) {
@@ -442,63 +297,6 @@ export default function App() {
 
   const setSelectedTabContext = (targetTab: string) => {
     setActiveTab(targetTab);
-  };
-
-  const handleDownloadBackupFile = () => {
-    const fullDatabaseMap = {
-      teachers,
-      rooms,
-      exams,
-      allocations,
-      notificationsLog
-    };
-    
-    const jsonContent = JSON.stringify(fullDatabaseMap, null, 2);
-    const blob = new Blob([jsonContent], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `seguranca_exames_backup_${new Date().toISOString().split('T')[0]}.json`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleUploadBackupFile = async (fileText: string) => {
-    try {
-      const parsed = JSON.parse(fileText);
-      if (parsed.teachers && parsed.rooms && parsed.exams) {
-        await api.teachers.deleteAll();
-        for (const t of parsed.teachers) await api.teachers.save(t);
-        for (const r of parsed.rooms) await api.rooms.save(r);
-        for (const e of parsed.exams) await api.exams.save(e);
-        if (parsed.allocations) {
-          for (const a of parsed.allocations) await api.allocations.save(a);
-        }
-        if (parsed.notificationsLog) {
-          for (const n of parsed.notificationsLog) await api.notifications.save(n);
-        }
-
-        const [tData, rData, eData, aData, nData] = await Promise.all([
-          api.teachers.getAll(),
-          api.rooms.getAll(),
-          api.exams.getAll(),
-          api.allocations.getAll(),
-          api.notifications.getAll()
-        ]);
-
-        setTeachers(tData);
-        setRooms(sortRooms(rData));
-        setExams(eData);
-        setAllocations(aData);
-        setNotificationsLog(nData);
-        alert(t.restoreSuccessMsg);
-      } else {
-        alert(lang === 'pt' ? 'O arquivado de importação de JSON é inválido.' : 'Invalid system map dataset format.');
-      }
-    } catch(e) {
-      alert(lang === 'pt' ? 'Erro de leitura do ficheiro de restauro.' : 'Error decoding local backup database file.');
-    }
   };
 
   if (isLoading) {
@@ -736,7 +534,6 @@ export default function App() {
                   rooms={rooms} 
                   exams={exams} 
                   allocations={allocations} 
-                  notificationsLog={notificationsLog}
                   onAutoTrigger={handleAutoTriggerAll}
                   onClearAllocations={handleClearAllocationsAll}
                   onRefreshData={handleRefreshData}
@@ -752,7 +549,6 @@ export default function App() {
                   onAddTeacher={handleAddTeacher}
                   onUpdateTeacher={handleUpdateTeacher}
                   onDeleteTeacher={handleDeleteTeacher}
-                  onBulkImport={handleBulkImportTeachers}
                   onClearAllTeachers={handleClearAllTeachers}
                 />
               )}
@@ -766,6 +562,7 @@ export default function App() {
                   onAddRoom={handleAddRoom}
                   onUpdateRoom={handleUpdateRoom}
                   onDeleteRoom={handleDeleteRoom}
+                  onUpdateAllRooms={handleUpdateAllRooms}
                 />
               )}
               {activeTab === 'exams' && (
@@ -808,21 +605,17 @@ export default function App() {
                 />
               )}
               {activeTab === 'notifications' && (
-                <NotificationCenter 
+                <NotificationSender 
                   lang={lang} 
-                  notifications={notificationsLog} 
-                  session={session}
-                  teachers={teachers}
-                  onAddNotification={handleAddNotificationLog}
-                  onMarkAsRead={handleMarkAsRead}
-                  onMarkAllAsRead={handleMarkAllAsRead}
+                  teachers={teachers} 
+                  exams={exams} 
+                  rooms={rooms} 
+                  allocations={allocations} 
                 />
               )}
               {activeTab === 'backup' && (
                 <BackupLogs 
                   lang={lang} 
-                  onDownloadBackup={handleDownloadBackupFile} 
-                  onUploadBackup={handleUploadBackupFile} 
                 />
               )}
             </motion.div>

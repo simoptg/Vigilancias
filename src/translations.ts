@@ -28,6 +28,7 @@ export const translations = {
     tabExamRooms: "Salas de Exame",
     tabSchedule: "Alocações & Escala",
     tabReports: "Relatórios & Exportar",
+    tabNotifications: "Enviar Notificações",
     tabBackup: "Nuvem & Backup",
 
     // Dashboard
@@ -46,6 +47,12 @@ export const translations = {
     warningsList: "Alertas de Compatibilidade",
     warningSameSubject: "O professor ensina a disciplina do exame!",
     warningDoubleBooking: "O professor está alocado a múltiplas salas no mesmo horário!",
+    clearConfirmTitle: "Confirmar Limpeza Total",
+    clearConfirmMessage: "Esta ação irá eliminar TODAS as alocações de professores em todos os exames. Para confirmar, por favor escreva a seguinte frase:",
+    clearConfirmPlaceholder: "Escreva a frase de confirmação aqui...",
+    clearConfirmButton: "Eliminar Definitivamente",
+    clearSuccess: "Todas as alocações foram eliminadas com sucesso!",
+    confirmPhrase: "ELIMINAR TUDO",
 
     // Teachers Screen
     teacherTitle: "Gestão de Corpo Docente",
@@ -197,6 +204,12 @@ export const translations = {
     warningsList: "Compatibility Conflicts",
     warningSameSubject: "Teacher teaches the exam's subject!",
     warningDoubleBooking: "Teacher assigned to multiple rooms at the same time!",
+    clearConfirmTitle: "Confirm Total Clear",
+    clearConfirmMessage: "This action will delete ALL teacher allocations across all exams. To confirm, please type the following phrase:",
+    clearConfirmPlaceholder: "Type the confirmation phrase here...",
+    clearConfirmButton: "Delete Permanently",
+    clearSuccess: "All allocations have been successfully deleted!",
+    confirmPhrase: "DELETE EVERYTHING",
 
     // Teachers Screen
     teacherTitle: "Faculty Management",

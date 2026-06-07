@@ -200,7 +200,7 @@ export default function ExamRoomManager({
                   </div>
 
                   <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-1.5 mt-0.5">
-                    {lang === 'pt' ? 'Especialidade' : 'Subject'}: <span className="font-semibold text-slate-600">{ex.subject}</span>
+                    {lang === 'pt' ? 'Grupo Disciplinar' : 'Subject Group'}: <span className="font-semibold text-slate-600">{ex.subject_group}</span>
                   </div>
                 </button>
               );
@@ -226,7 +226,7 @@ export default function ExamRoomManager({
                 {currentExam.name}
               </h3>
               <p className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-3">
-                <span>{lang === 'pt' ? 'Disciplina' : 'Specialty'}: <strong className="text-white">{currentExam.subject}</strong></span>
+                <span>{lang === 'pt' ? 'Grupo Disciplinar' : 'Subject Group'}: <strong className="text-white">{currentExam.subject_group}</strong></span>
                 <span>•</span>
                 <span>{lang === 'pt' ? 'Data' : 'Date'}: <strong className="text-white">{currentExam.date}</strong></span>
                 <span>•</span>

@@ -29,7 +29,6 @@ interface TeacherManagerProps {
   onUpdateTeacher: (teacher: Teacher) => void;
   onDeleteTeacher: (id: string) => void;
   onClearAllTeachers: () => void;
-  onBulkImport: (teachers: Teacher[]) => void;
 }
 
 export default function TeacherManager({
@@ -38,8 +37,7 @@ export default function TeacherManager({
   onAddTeacher,
   onUpdateTeacher,
   onDeleteTeacher,
-  onClearAllTeachers,
-  onBulkImport
+  onClearAllTeachers
 }: TeacherManagerProps) {
   const t = translations[lang];
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,10 +75,6 @@ export default function TeacherManager({
     };
     fetchRoles();
   }, [isModalOpen]);
-
-  // CSV Drag state
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [csvAlert, setCsvAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // New Confirm Clear states
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
@@ -138,168 +132,6 @@ export default function TeacherManager({
     setIsModalOpen(false);
   };
 
-  // XLSX excel parsing function
-  const parseXLSXFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = event.target?.result;
-        if (!data) return;
-        
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        
-        const rows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
-        if (rows.length < 2) {
-          setCsvAlert({ 
-            type: 'error', 
-            message: lang === 'pt' ? 'Ficheiro Excel vazio ou sem cabeçalhos.' : 'Excel file is empty or missing headers.' 
-          });
-          return;
-        }
-
-        const headers = rows[0].map((h: any) => String(h || '').trim().toLowerCase());
-        
-        const newTeachers: Teacher[] = [];
-
-        for (let i = 1; i < rows.length; i++) {
-          const cells = rows[i];
-          if (!cells || cells.length === 0) continue;
-
-          // Check if row is completely empty
-          if (cells.every((c: any) => c === null || c === undefined || String(c).trim() === '')) {
-            continue;
-          }
-
-          let nameIdx = headers.findIndex(h => h.includes('nome') || h.includes('name'));
-          let groupIdx = headers.findIndex(h => h.includes('grupo') || h.includes('group'));
-          let subjIdx = headers.findIndex(h => (h.includes('disciplina') || h.includes('subject')) && !h.includes('grupo') && !h.includes('group'));
-          let roleIdx = headers.findIndex(h => h.includes('cargo') || h.includes('vinculo') || h.includes('role') || h.includes('exercido'));
-          let emailIdx = headers.findIndex(h => h.includes('email') || h.includes('mail'));
-
-          if (nameIdx === -1) nameIdx = 0;
-          if (groupIdx === -1) groupIdx = 1;
-          if (subjIdx === -1) subjIdx = 2;
-          if (roleIdx === -1) roleIdx = 3;
-          if (emailIdx === -1) emailIdx = 4;
-
-          const parsedName = String(cells[nameIdx] || '').trim();
-          const parsedGroup = String(cells[groupIdx] || '300').trim();
-          const parsedSubj = String(cells[subjIdx] || 'Geral').trim();
-          const parsedRole = (cells[roleIdx] !== undefined && cells[roleIdx] !== null && String(cells[roleIdx]).trim() !== '') 
-            ? String(cells[roleIdx]).trim() 
-            : '';
-          const parsedEmail = String(cells[emailIdx] || '').trim();
-
-          if (!parsedName) {
-            continue;
-          }
-
-          newTeachers.push({
-            id: `t_xlsx_${Date.now()}_${i}`,
-            name: parsedName,
-            subject_group: parsedGroup,
-            subject: parsedSubj,
-            role: parsedRole,
-            email: parsedEmail,
-            available: true,
-            unavailabilities: []
-          });
-        }
-
-        if (newTeachers.length > 0) {
-          onBulkImport(newTeachers);
-          setCsvAlert({
-            type: 'success',
-            message: lang === 'pt' 
-              ? `Sucesso: ${newTeachers.length} docentes importados do ficheiro Excel (.xlsx)!`
-              : `Success: ${newTeachers.length} teachers imported from the Excel (.xlsx) file!`
-          });
-        } else {
-          setCsvAlert({ 
-            type: 'error', 
-            message: lang === 'pt' ? 'Dados inválidos ou vazios no ficheiro Excel.' : 'No valid teacher data detected in Excel file.' 
-          });
-        }
-      } catch (err) {
-        console.error(err);
-        setCsvAlert({ 
-          type: 'error', 
-          message: lang === 'pt' ? 'Erro ao ler o ficheiro Excel (.xlsx).' : 'Error reading the Excel (.xlsx) file.' 
-        });
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    parseXLSXFile(file);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    parseXLSXFile(file);
-  };
-
-  // Generate a mock Excel .xlsx template using the xlsx library
-  const handleDownloadTemplate = () => {
-    const data = [
-      {
-        "Nome": "Dr. Manuel Silva",
-        "Grupo Disciplinar": "500",
-        "Disciplina": "Matemática",
-        "Cargo Exercido": "Professor de Quadro",
-        "Email": "manuel.silva@escola.pt"
-      },
-      {
-        "Nome": "Dra. Sandra Santos",
-        "Grupo Disciplinar": "300",
-        "Disciplina": "Português",
-        "Cargo Exercido": "Professor de Quadro",
-        "Email": "sandra.santos@escola.pt"
-      },
-      {
-        "Nome": "Dr. João Costa",
-        "Grupo Disciplinar": "510",
-        "Disciplina": "Física e Química",
-        "Cargo Exercido": "Professor Contratado",
-        "Email": "joao.costa@escola.pt"
-      },
-      {
-        "Nome": "Dra. Maria Mendes",
-        "Grupo Disciplinar": "430",
-        "Disciplina": "Biologia e Geologia",
-        "Cargo Exercido": "Professor de Quadro",
-        "Email": "maria.mendes@escola.pt"
-      }
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Professores");
-    
-    // Auto-fit column widths
-    const max_width = data.reduce((w, r) => Math.max(w, r.Nome.length), 10);
-    worksheet["!cols"] = [{ wch: max_width + 5 }];
-
-    XLSX.writeFile(workbook, "modelo_professores.xlsx");
-  };
-
   const handleClearAllClick = () => {
     if (isConfirmingClear) {
       onClearAllTeachers();
@@ -351,27 +183,6 @@ export default function TeacherManager({
           )}
 
           <button
-            onClick={handleDownloadTemplate}
-            className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg transition border border-slate-200 cursor-pointer"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>{t.csvTemplate}</span>
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg transition border border-slate-200 cursor-pointer"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            <span>{t.importCsv}</span>
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept=".xlsx"
-            className="hidden"
-          />
-          <button
             onClick={handleOpenAdd}
             className="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow cursor-pointer"
           >
@@ -380,42 +191,6 @@ export default function TeacherManager({
           </button>
         </div>
       </div>
-
-      {/* Drag & Drop Visual Area */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-xl p-6 text-center transition ${
-          isDragOver 
-            ? 'border-blue-500 bg-blue-50/50 text-blue-800' 
-            : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 text-slate-500'
-        }`}
-      >
-        <div className="flex flex-col items-center justify-center space-y-2">
-          <FileSpreadsheet className={`h-8 w-8 ${isDragOver ? 'text-blue-500 animate-bounce' : 'text-slate-400'}`} />
-          <p className="text-xs font-medium">{t.csvDropZone}</p>
-          <p className="text-[10px] text-slate-400">
-            Formato: Nome, Grupo Disciplinar, Disciplina, Cargo Exercido, Email
-          </p>
-        </div>
-      </div>
-
-      {/* Status Warning Alerts */}
-      {csvAlert && (
-        <div 
-          className={`px-4 py-3 rounded-lg text-xs flex justify-between items-center ${
-            csvAlert.type === 'success' 
-              ? 'bg-blue-50 border border-blue-250 text-blue-900' 
-              : 'bg-red-50 border border-red-200 text-red-900'
-          }`}
-        >
-          <p>{csvAlert.message}</p>
-          <button onClick={() => setCsvAlert(null)} className="text-slate-400 hover:text-slate-600">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Search Input filter bar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center space-x-3">

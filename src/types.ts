@@ -26,6 +26,7 @@ export interface Room {
   name: string;         // e.g. "Sala 101", "Anfiteatro A"
   capacity: number;     // Student capacity
   floor?: string;
+  priority: number;
 }
 
 export interface Exam {

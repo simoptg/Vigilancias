@@ -3,239 +3,208 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useState } from 'react';
-import { Language } from '../types';
-import { translations } from '../translations';
-import { 
-  Download, 
-  Upload, 
-  ShieldCheck, 
-  CheckCircle2, 
-  FileJson, 
-  AlertCircle, 
-  Check 
-} from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Database, Download, Upload, Trash2, Clock, CheckCircle, AlertCircle, Loader2, FileSpreadsheet } from 'lucide-react';
+import { api } from '../utils/api';
+import { Teacher, Exam, Room, Language } from '../types';
+import { exportToExcel, importFromExcel } from '../utils/excel';
 
 interface BackupLogsProps {
   lang: Language;
-  onDownloadBackup: () => void;
-  onUploadBackup: (fileContent: string) => void;
 }
 
-const localLabels = {
-  pt: {
-    backupTitle: "Salvaguarda & Cópias de Segurança",
-    backupSubtitle: "Efetue cópias de segurança do planeador e das escalas de exames localmente de forma simples e segura.",
-    cardDownloadTitle: "Exportar Dados Atuais",
-    cardDownloadDesc: "Descarregue todos os registos (professores, salas, exames e escalas ativas) para um ficheiro JSON encriptado e portátil. Pode guardar este ficheiro em qualquer dispositivo.",
-    cardUploadTitle: "Restaurar Cópia de Segurança",
-    cardUploadDesc: "Carregue um ficheiro de salvaguarda (.json) anteriormente exportado para repor instantaneamente o planeamento para o estado guardado.",
-    localSecurityTitle: "Segurança de Dados Local Garantida",
-    localSecurityDesc: "Toda a computação, dados introduzidos e escalas geradas permanecem guardados exclusivamente no seu navegador (Local Storage) e no seu dispositivo local. Nenhuma informação é submetida para servidores externos de bases de dados, oferecendo a máxima privacidade e segurança corporativa.",
-    dragDropText: "Arraste e solte o ficheiro JSON de backup aqui ou clique para selecionar",
-    downloadBtn: "Descarregar Backup (.json)",
-    uploadSuccess: "Cópia de segurança de dados restabelecida com sucesso!",
-    uploadError: "Ocorreu um erro ao carregar o ficheiro. Certifique-se de que é um ficheiro JSON de backup válido.",
-  },
-  en: {
-    backupTitle: "Backup & Data Safeguard",
-    backupSubtitle: "Backup exam schedules, roster scales, rooms, and teachers locally and securely.",
-    cardDownloadTitle: "Export Current Framework State",
-    cardDownloadDesc: "Download all data entries (teachers, allocations, exams, and rooms) into a responsive, portable JSON format. You can store this backup on any local server or drive.",
-    cardUploadTitle: "Restore Framework State",
-    cardUploadDesc: "Import any previously downloaded backup file (.json) to instantly replace all variables and re-populate the planner layout.",
-    localSecurityTitle: "Guaranteed Local Security & Privacy",
-    localSecurityDesc: "All structural information, timetables, and teacher rosters remain fully local within your browser session (LocalStorage). No tracking analytics or third-party database nodes are utilized, ensuring complete data security compliance.",
-    dragDropText: "Drag & drop backup JSON file here, or click to choose from local disk",
-    downloadBtn: "Download Backup (.json)",
-    uploadSuccess: "System backup state imported and applied successfully!",
-    uploadError: "Failed to parse. Please confirm that the selected file is a valid JSON planner export structure.",
-  }
-};
-
-export default function BackupLogs({
-  lang,
-  onDownloadBackup,
-  onUploadBackup
-}: BackupLogsProps) {
-  const t = translations[lang];
-  const ll = localLabels[lang];
+export default function BackupLogs({ lang }: BackupLogsProps) {
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [roles, setRoles] = useState<{id: string, name: string}[]>([]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [t, e, r, rl] = await Promise.all([
+          api.teachers.getAll(),
+          api.exams.getAll(),
+          api.rooms.getAll(),
+          api.roles.getAll()
+        ]);
+        setTeachers(t);
+        setExams(e);
+        setRooms(r);
+        setRoles(rl);
+      } catch (err) {
+        console.error('Error fetching data for backup:', err);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      exportToExcel(teachers, exams, rooms, roles);
+      setStatus({
+        type: 'success',
+        message: lang === 'pt' ? 'Cópia de segurança Excel gerada com sucesso.' : 'Excel backup generated successfully.'
+      });
+    } catch (err) {
+      setStatus({
+        type: 'error',
+        message: lang === 'pt' ? 'Erro ao gerar cópia de segurança.' : 'Error generating backup.'
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    processBackupFile(file);
-  };
+    const confirmed = window.confirm(
+      lang === 'pt' 
+        ? 'Atenção: A importação de Excel irá substituir TODOS os dados atuais de Professores, Exames, Salas e Cargos. Deseja continuar?' 
+        : 'Warning: Excel import will replace ALL current data for Teachers, Exams, Rooms and Roles. Do you want to continue?'
+    );
 
-  const processBackupFile = (file: File) => {
-    setUploadStatus(null);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const text = event.target?.result as string;
-        // Simple sanity check
-        const parsed = JSON.parse(text);
-        if (parsed) {
-          onUploadBackup(text);
-          setUploadStatus({
-            type: 'success',
-            message: ll.uploadSuccess
-          });
-        } else {
-          throw new Error('Formato inválido');
-        }
-      } catch (err) {
-        setUploadStatus({
-          type: 'error',
-          message: ll.uploadError
-        });
+    if (!confirmed) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setIsImporting(true);
+    setStatus(null);
+
+    try {
+      const data = await importFromExcel(file, roles);
+      const result = await api.import.bulk(data);
+
+      if (result.error) {
+        throw new Error(result.detail || result.error);
       }
-    };
-    reader.readAsText(file);
-  };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.name.endsWith('.json')) {
-      processBackupFile(file);
-    } else {
-      setUploadStatus({
-        type: 'error',
-        message: ll.uploadError
+      setStatus({
+        type: 'success',
+        message: lang === 'pt' 
+          ? `Importação concluída: ${result.stats.teachers} professores, ${result.stats.exams} exames.` 
+          : `Import finished: ${result.stats.teachers} teachers, ${result.stats.exams} exams.`
       });
+      
+      // Refresh local state or force reload
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err: any) {
+      console.error('Import error:', err);
+      setStatus({
+        type: 'error',
+        message: lang === 'pt' ? `Erro na importação: ${err.message}` : `Import error: ${err.message}`
+      });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   return (
-    <div id="backup_logs" className="space-y-6">
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">{ll.backupTitle}</h2>
-          <p className="text-slate-500 text-xs">{ll.backupSubtitle}</p>
+          <h2 className="text-xl font-bold text-slate-800">
+            {lang === 'pt' ? 'Gestão de Dados (Excel)' : 'Data Management (Excel)'}
+          </h2>
+          <p className="text-slate-500 text-xs">
+            {lang === 'pt' 
+              ? 'Importação e exportação unificada de tabelas base via Excel.' 
+              : 'Unified import and export of base tables via Excel.'}
+          </p>
         </div>
       </div>
 
-      {uploadStatus && (
-        <div 
-          id="upload_feedback_banner" 
-          className={`p-4 rounded-xl border flex items-start space-x-3 text-xs font-semibold max-w-4xl transition duration-150 ${
-            uploadStatus.type === 'error' 
-              ? 'bg-rose-50 border-rose-200 text-rose-800' 
-              : 'bg-emerald-50 border-emerald-250 text-emerald-800'
-          }`}
-        >
-          {uploadStatus.type === 'error' ? (
-            <AlertCircle className="h-5 w-5 text-rose-500 flex-shrink-0" />
-          ) : (
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
-          )}
-          <div className="space-y-1">
-            <p className="font-extrabold">{uploadStatus.type === 'error' ? 'Falha na Operação' : 'Sucesso'}</p>
-            <p>{uploadStatus.message}</p>
-          </div>
+      {status && (
+        <div className={`p-4 rounded-lg flex items-center space-x-3 text-sm ${
+          status.type === 'success' ? 'bg-blue-50 text-blue-800 border border-blue-100' : 'bg-rose-50 text-rose-800 border border-rose-100'
+        }`}>
+          {status.type === 'success' ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+          <span>{status.message}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-        
-        {/* Left Card: DOWNLOAD backup */}
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 space-y-4">
-          <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
-            <div className="h-10 w-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-500 border border-blue-100">
-              <Download className="h-5 w-5" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Export Card */}
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center space-x-3 text-blue-600">
+            <div className="p-2 bg-blue-50 rounded-lg">
+              <Download className="h-6 w-6" />
             </div>
-            <div>
-              <h3 className="font-bold text-slate-800 text-sm">{ll.cardDownloadTitle}</h3>
-              <p className="text-[11px] text-slate-400">Offline JSON Export</p>
-            </div>
+            <h3 className="font-bold text-slate-800">
+              {lang === 'pt' ? 'Exportar para Excel' : 'Export to Excel'}
+            </h3>
           </div>
-
-          <p className="text-slate-600 text-xs leading-relaxed">
-            {ll.cardDownloadDesc}
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {lang === 'pt' 
+              ? 'Descarregue um ficheiro Excel (.xlsx) contendo todos os dados de Professores, Exames, Salas e Cargos. Os IDs internos são omitidos para facilitar a edição manual.' 
+              : 'Download an Excel file (.xlsx) containing all Teachers, Exams, Rooms and Roles data. Internal IDs are omitted to facilitate manual editing.'}
           </p>
-
           <button
-            id="download_state_json_btn"
-            onClick={onDownloadBackup}
-            className="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-3 rounded-lg transition shadow-sm cursor-pointer"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-50 cursor-pointer"
           >
-            <FileJson className="h-4 w-4" />
-            <span>{ll.downloadBtn}</span>
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            <span>{lang === 'pt' ? 'Gerar Ficheiro Excel' : 'Generate Excel File'}</span>
           </button>
         </div>
 
-        {/* Right Card: UPLOAD backup */}
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 space-y-4">
-          <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
-            <div className="h-10 w-10 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-500 border border-indigo-100">
-              <Upload className="h-5 w-5" />
+        {/* Import Card */}
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center space-x-3 text-indigo-600">
+            <div className="p-2 bg-indigo-50 rounded-lg">
+              <Upload className="h-6 w-6" />
             </div>
-            <div>
-              <h3 className="font-bold text-slate-800 text-sm">{ll.cardUploadTitle}</h3>
-              <p className="text-[11px] text-slate-400">Offline JSON Import</p>
-            </div>
+            <h3 className="font-bold text-slate-800">
+              {lang === 'pt' ? 'Importar de Excel' : 'Import from Excel'}
+            </h3>
           </div>
-
-          <p className="text-slate-600 text-xs leading-relaxed">
-            {ll.cardUploadDesc}
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {lang === 'pt' 
+              ? 'Atualize todas as tabelas base carregando um ficheiro Excel. Este processo substitui os dados atuais e limpa as distribuições existentes.' 
+              : 'Update all base tables by uploading an Excel file. This process replaces current data and clears existing distributions.'}
           </p>
-
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
+          <button
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
-              isDragging 
-                ? 'border-indigo-500 bg-indigo-50/50 text-indigo-800' 
-                : 'border-slate-300 hover:border-slate-400 text-slate-500 bg-slate-50 hover:bg-slate-100/50'
-            }`}
+            disabled={isImporting}
+            className="w-full flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-50 cursor-pointer"
           >
-            <Upload className="h-8 w-8 mx-auto text-slate-400 mb-2.5 animate-bounce" />
-            <p className="text-[11px] font-bold leading-normal px-2">
-              {ll.dragDropText}
-            </p>
-            
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".json"
-              className="hidden"
-            />
-          </div>
+            {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            <span>{lang === 'pt' ? 'Carregar Ficheiro Excel' : 'Upload Excel File'}</span>
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImport}
+            accept=".xlsx"
+            className="hidden"
+          />
         </div>
-
       </div>
 
-      {/* Security note card */}
-      <div className="max-w-4xl bg-slate-50 border border-slate-200 p-5 rounded-xl space-y-2">
-        <h4 className="text-xs font-bold text-slate-800 flex items-center space-x-2">
-          <ShieldCheck className="h-4.5 w-4.5 text-emerald-500" />
-          <span>{ll.localSecurityTitle}</span>
-        </h4>
-        <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-          {ll.localSecurityDesc}
-        </p>
+      <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start space-x-3">
+        <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <h4 className="text-sm font-bold text-amber-900">
+            {lang === 'pt' ? 'Informação Importante' : 'Important Information'}
+          </h4>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            {lang === 'pt' 
+              ? 'Para garantir a integridade dos dados, utilize sempre o ficheiro exportado como base para as suas edições. Não altere os nomes das colunas nem das folhas do Excel.' 
+              : 'To ensure data integrity, always use the exported file as a basis for your edits. Do not change the names of the columns or the Excel sheets.'}
+          </p>
+        </div>
       </div>
-
     </div>
   );
 }

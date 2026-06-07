@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { Room, Language } from '../types';
 import { translations } from '../translations';
-import { Plus, Home, Trash2, Edit2, X } from 'lucide-react';
+import { Plus, Home, Trash2, Edit2, X, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface RoomManagerProps {
   lang: Language;
@@ -14,6 +14,7 @@ interface RoomManagerProps {
   onAddRoom: (room: Room) => void;
   onUpdateRoom: (room: Room) => void;
   onDeleteRoom: (id: string) => void;
+  onUpdateAllRooms: (rooms: Room[]) => void;
 }
 
 export default function RoomManager({
@@ -21,7 +22,8 @@ export default function RoomManager({
   rooms,
   onAddRoom,
   onUpdateRoom,
-  onDeleteRoom
+  onDeleteRoom,
+  onUpdateAllRooms
 }: RoomManagerProps) {
   const t = translations[lang];
 
@@ -76,13 +78,33 @@ export default function RoomManager({
         capacity: Number(capacity)
       });
     } else {
+      const maxPriority = rooms.length > 0 ? Math.max(...rooms.map(r => r.priority)) : 0;
       onAddRoom({
         id: `r_${Date.now()}`,
         name: name.trim(),
-        capacity: Number(capacity)
+        capacity: Number(capacity),
+        priority: maxPriority + 1
       });
     }
     setIsModalOpen(false);
+  };
+
+  const moveRoom = (index: number, direction: 'up' | 'down') => {
+    const newRooms = [...rooms];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    if (targetIndex < 0 || targetIndex >= newRooms.length) return;
+    
+    // Swap rooms
+    [newRooms[index], newRooms[targetIndex]] = [newRooms[targetIndex], newRooms[index]];
+    
+    // Update priorities based on new order
+    const updatedRooms = newRooms.map((room, idx) => ({
+      ...room,
+      priority: idx + 1
+    }));
+    
+    onUpdateAllRooms(updatedRooms);
   };
 
   return (
@@ -101,13 +123,12 @@ export default function RoomManager({
         </button>
       </div>
 
-      {/* Rooms simple grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {rooms.length > 0 ? (
-          rooms.map((room) => (
+          [...rooms].sort((a, b) => a.priority - b.priority).map((room, index) => (
             <div 
               key={room.id} 
-              className="bg-white border border-slate-200 shadow-sm hover:shadow transition rounded-xl p-5 relative overflow-hidden"
+              className="bg-white border border-slate-200 shadow-sm hover:shadow transition rounded-xl p-5 relative overflow-hidden group"
             >
               {/* Nice ambient ceiling tab accent */}
               <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500" />
@@ -118,20 +139,45 @@ export default function RoomManager({
                     <Home className="h-4 w-4 text-slate-400" />
                     <span className="font-bold text-slate-900 text-sm">{room.name}</span>
                   </div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    Prioridade: {room.priority}
+                  </div>
                 </div>
-                <div className="flex space-x-1">
-                  <button 
-                    onClick={() => handleOpenEdit(room)}
-                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded transition cursor-pointer"
-                  >
-                    <Edit2 className="h-3.5 w-3.5" />
-                  </button>
-                  <button 
-                    onClick={() => onDeleteRoom(room.id)}
-                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded transition cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                <div className="flex flex-col space-y-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex space-x-1">
+                    <button 
+                      onClick={() => handleOpenEdit(room)}
+                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded transition cursor-pointer"
+                      title={lang === 'pt' ? 'Editar Sala' : 'Edit Room'}
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => onDeleteRoom(room.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded transition cursor-pointer"
+                      title={lang === 'pt' ? 'Eliminar Sala' : 'Delete Room'}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex space-x-1 justify-end">
+                    <button 
+                      disabled={index === 0}
+                      onClick={() => moveRoom(index, 'up')}
+                      className={`p-1 rounded transition cursor-pointer ${index === 0 ? 'text-slate-200' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-50'}`}
+                      title={lang === 'pt' ? 'Mover para Cima' : 'Move Up'}
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button 
+                      disabled={index === rooms.length - 1}
+                      onClick={() => moveRoom(index, 'down')}
+                      className={`p-1 rounded transition cursor-pointer ${index === rooms.length - 1 ? 'text-slate-200' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-50'}`}
+                      title={lang === 'pt' ? 'Mover para Baixo' : 'Move Down'}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
 

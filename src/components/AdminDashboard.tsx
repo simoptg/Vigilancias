@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Language, Teacher, Room, Exam, Allocation, NotificationLog } from '../types';
+import { Language, Teacher, Room, Exam, Allocation } from '../types';
 import { translations } from '../translations';
 import { 
   Users, 
@@ -14,11 +14,11 @@ import {
   AlertTriangle, 
   Trash2, 
   CheckCircle,
-  Bell,
   MessageSquare,
   Send,
   Loader2,
-  FileText
+  FileText,
+  X
 } from 'lucide-react';
 import { hasSubjectConflict, getPeriodFromTime } from '../utils/scheduler';
 import { api } from '../utils/api';
@@ -30,7 +30,6 @@ interface AdminDashboardProps {
   rooms: Room[];
   exams: Exam[];
   allocations: Allocation[];
-  notificationsLog: NotificationLog[];
   onAutoTrigger: () => void;
   onClearAllocations: () => void;
   onRefreshData: () => void;
@@ -42,7 +41,6 @@ export default function AdminDashboard({
   rooms,
   exams,
   allocations,
-  notificationsLog,
   onAutoTrigger,
   onClearAllocations,
   onRefreshData
@@ -54,194 +52,9 @@ export default function AdminDashboard({
   const [aiResponse, setAiResponse] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // Import State
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleImportMapaGeral = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const confirmed = window.confirm(
-        lang === 'pt'
-          ? 'Esta importacao vai apagar todos os professores e exames atuais, bem como as alocacoes associadas, antes de carregar o novo Mapa Geral. Pretende continuar?'
-          : 'This import will delete all current teachers and exams, as well as related allocations, before loading the new General Map. Do you want to continue?'
-      );
-
-      if (!confirmed) {
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
-      }
- 
-     setIsImporting(true);
-     const reader = new FileReader();
- 
-     reader.onload = async (evt) => {
-       try {
-         const bstr = evt.target?.result;
-         const wb = XLSX.read(bstr, { type: 'binary' });
-         const ws = wb.Sheets["Mapa Geral"];
-         
-         if (!ws) {
-           alert(lang === 'pt' ? 'Folha "Mapa Geral" não encontrada no Excel!' : '"Mapa Geral" sheet not found in Excel!');
-           setIsImporting(false);
-           return;
-         }
- 
-         const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-         
-         const importedTeachers: any[] = [];
-         const importedExams: any[] = [];
-         const importedRoles: any[] = [];
-         const roleNamesSet = new Set<string>();
-
-         // Helper para converter "terça 16 de junho" para "2026-06-16"
-         const parsePortugueseDate = (str: string) => {
-           if (!str) return "";
-           const clean = str.toLowerCase();
-           const dayMatch = clean.match(/(\d{1,2})/);
-           if (!dayMatch) return "";
-           
-           const day = dayMatch[1].padStart(2, '0');
-           const year = 2026; // Forçado para 2026 conforme solicitado
-           
-           let month = "06"; // Default Junho
-           if (clean.includes("janeiro")) month = "01";
-           else if (clean.includes("fevereiro")) month = "02";
-           else if (clean.includes("março")) month = "03";
-           else if (clean.includes("abril")) month = "04";
-           else if (clean.includes("maio")) month = "05";
-           else if (clean.includes("junho")) month = "06";
-           else if (clean.includes("julho")) month = "07";
-           else if (clean.includes("agosto")) month = "08";
-           else if (clean.includes("setembro")) month = "09";
-           else if (clean.includes("outubro")) month = "10";
-           else if (clean.includes("novembro")) month = "11";
-           else if (clean.includes("dezembro")) month = "12";
-           
-           const dateStr = `${year}-${month}-${day}`;
-           
-           // Validar se a data está dentro do intervalo permitido (16 Junho a 31 Julho)
-           const dateObj = new Date(dateStr);
-           const minDate = new Date("2026-06-16");
-           const maxDate = new Date("2026-07-31");
-           
-           if (dateObj < minDate || dateObj > maxDate) {
-             return ""; // Ignorar datas fora do intervalo
-           }
-
-           return dateStr;
-         };
- 
-         // 1. Encontrar Exames (Procurar na linha 6 e acima)
-         // O row 4 ou 5 contém a data (mesclada em várias colunas)
-         // O row 6 contém a hora e o nome do exame
-         let lastValidDate = "";
-         
-         for (let col = 4; col < data[5]?.length; col++) {
-           const examCell = data[5][col]; // Linha 6 (index 5)
-           
-           // Tentar achar a data no row acima (linha 4 ou 5) para esta coluna específica
-           // Como as células são mescladas, a data aparece na primeira coluna do grupo
-           const potentialDate4 = data[3]?.[col] ? String(data[3][col]).trim() : "";
-           const potentialDate5 = data[4]?.[col] ? String(data[4][col]).trim() : "";
-           const dateFound = potentialDate4 || potentialDate5;
-           
-           if (dateFound) {
-             lastValidDate = parsePortugueseDate(dateFound);
-           }
-
-           if (examCell && typeof examCell === 'string' && examCell.includes('(')) {
-             // Exemplo: "8:45 Português Língua Não Materna (839)"
-             const timeMatch = examCell.match(/(\d{1,2}:\d{2})/);
-             const time = timeMatch ? timeMatch[1] : "08:45";
-             
-             // Limpeza do nome e disciplina
-             const fullName = examCell.replace(time, '').trim();
-             const nameParts = fullName.split('(');
-             const nameOnly = nameParts[0].trim();
-             const codeMatch = nameParts[1] ? nameParts[1].match(/(\d+)/) : null;
-             const code = codeMatch ? codeMatch[1] : "";
-             
-             importedExams.push({
-               id: `ex_${col}_${lastValidDate}`,
-               name: nameOnly,
-               variant: nameOnly.includes('LNM') ? 'LNM' : (nameOnly.includes(' - ') ? nameOnly.split(' - ')[1] : null),
-               year: fullName.includes('12') ? '12' : (fullName.includes('11') ? '11' : '9'),
-               code: code,
-               date: lastValidDate || "2026-06-16",
-               time: time,
-               shift: fullName.includes('T1') ? 'T1' : (fullName.includes('T2') ? 'T2' : null),
-               modality: null, // Difícil extrair automaticamente sem padrão claro
-               phase: '1' // Assume 1ª fase por padrão no import
-             });
-           }
-         }
- 
-         // 2. Encontrar Teachers (A partir da linha 7)
-        for (let row = 6; row < data.length; row++) {
-          const groupCell = data[row][0]; // Coluna A
-          const nameCell = data[row][1];  // Coluna B
-          const roleCell = data[row][2];  // Coluna C
-
-          if (nameCell && groupCell) {
-            // "300 - Português" -> group: 300, subject: Português
-            const groupParts = String(groupCell).split('-').map(s => s.trim());
-            const subjectGroup = groupParts[0] || "300";
-            const subject = groupParts[1] || "Geral";
-            
-            const teacherName = String(nameCell).trim();
-            const roleName = roleCell ? String(roleCell).trim() : "";
-            const roleId = roleName ? roleName.toLowerCase().replace(/\s+/g, '_') : "";
-
-            if (roleId && !roleNamesSet.has(roleId)) {
-              importedRoles.push({ id: roleId, name: roleName });
-              roleNamesSet.add(roleId);
-            }
-
-            importedTeachers.push({
-              id: `t_${row}`,
-              name: teacherName,
-              subject_group: subjectGroup,
-              subject: subject,
-              role: roleId || null,
-              email: null,
-              available: true,
-              unavailabilities: []
-            });
-          }
-        }
-
-        // 3. Enviar para a API
-        const result = await api.import.mapaGeral({
-          teachers: importedTeachers,
-          exams: importedExams,
-          roles: importedRoles,
-          confirmReplace: true
-        });
-
-        if (result.error) {
-          alert(`Erro na importação: ${result.error}\n\nDetalhe: ${result.detail || 'N/A'}\n\nSugestão: ${result.hint || ''}`);
-          setIsImporting(false);
-          return;
-        }
-
-        alert(lang === 'pt' 
-          ? `Importação concluída: ${result.stats.teachers} professores e ${result.stats.exams} exames.` 
-          : `Import finished: ${result.stats.teachers} teachers and ${result.stats.exams} exams.`);
-        
-        onRefreshData();
-      } catch (err) {
-        console.error('Import error:', err);
-        alert('Erro ao processar o ficheiro Excel.');
-      } finally {
-        setIsImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    };
-
-    reader.readAsBinaryString(file);
-  };
+  // Clear Confirmation State
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+  const [confirmInput, setConfirmInput] = useState('');
 
   const handleAskAI = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -275,14 +88,21 @@ export default function AdminDashboard({
   const totalRooms = rooms.length;
   const totalExams = exams.length;
 
+  const availableTeachers = teachers.filter(t => {
+    const tRole = (t.role || "").toLowerCase();
+    const hasNoSpecialRole = tRole === "" || tRole === "professor";
+    return t.available && hasNoSpecialRole;
+  });
+  const unavailableTeachersCount = totalTeachers - availableTeachers.length;
+
   // Let's calculate coverage
-  // Let's calculate coverage
-  // Total roles needing invigilators: each exam needs 2 invigilators per room associated to it
+  // Total roles needing invigilators: each exam needs 2 invigilators + 1 substitute per room associated to it
   let totalRolesNeeded = 0;
   if (Array.isArray(exams)) {
     exams.forEach(ex => {
-      const examRoomsCount = Array.isArray(ex.roomIds) && ex.roomIds.length > 0 ? ex.roomIds.length : totalRooms;
-      totalRolesNeeded += examRoomsCount * 2;
+      // If no rooms are assigned yet, assume 1 room as base requirement
+      const examRoomsCount = Array.isArray(ex.roomIds) && ex.roomIds.length > 0 ? ex.roomIds.length : 1;
+      totalRolesNeeded += examRoomsCount * 3;
     });
   }
 
@@ -291,6 +111,7 @@ export default function AdminDashboard({
     allocations.forEach(alloc => {
       if (alloc.invigilator1Id) rolesFilledCount++;
       if (alloc.invigilator2Id) rolesFilledCount++;
+      if (alloc.substituteId) rolesFilledCount++;
     });
   }
 
@@ -370,21 +191,6 @@ export default function AdminDashboard({
         </div>
         <div className="flex gap-2.5">
           <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isImporting}
-            className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-indigo-700/10 cursor-pointer disabled:opacity-50"
-          >
-            {isImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-            <span>{lang === 'pt' ? 'Importar Mapa Geral' : 'Import General Map'}</span>
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleImportMapaGeral}
-            accept=".xlsx"
-            className="hidden"
-          />
-          <button
             onClick={onAutoTrigger}
             className="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-blue-700/10 cursor-pointer"
           >
@@ -392,41 +198,77 @@ export default function AdminDashboard({
             <span>{t.autoDistributeNow}</span>
           </button>
           <button
-            onClick={onClearAllocations}
+            onClick={() => {
+              setConfirmInput('');
+              setIsClearModalOpen(true);
+            }}
             className="flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-amber-900/10 cursor-pointer"
           >
             <Trash2 className="h-3.5 w-3.5" />
             <span>{t.clearAllocations}</span>
           </button>
-          <button
-            onClick={async () => {
-              const confirmed = window.confirm(
-                lang === 'pt' 
-                  ? 'Tem a certeza que deseja apagar TODOS os exames e professores? Esta ação não pode ser desfeita.' 
-                  : 'Are you sure you want to delete ALL exams and teachers? This action cannot be undone.'
-              );
-              if (confirmed) {
-                try {
-                  await api.import.mapaGeral({
-                    teachers: [],
-                    exams: [],
-                    roles: [],
-                    confirmReplace: true
-                  });
-                  onRefreshData();
-                  alert(lang === 'pt' ? 'Dados apagados com sucesso.' : 'Data cleared successfully.');
-                } catch (e) {
-                  alert('Erro ao apagar dados.');
-                }
-              }
-            }}
-            className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-rose-900/10 cursor-pointer"
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            <span>{lang === 'pt' ? 'Limpar Base Dados' : 'Clear Database'}</span>
-          </button>
         </div>
       </div>
+
+      {/* Clear Confirmation Modal */}
+      {isClearModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200">
+            <div className="px-6 py-4 bg-rose-50 border-b border-rose-100 flex justify-between items-center">
+              <h3 className="font-bold text-rose-800 text-sm flex items-center space-x-2">
+                <AlertTriangle className="h-4 w-4" />
+                <span>{t.clearConfirmTitle}</span>
+              </h3>
+              <button onClick={() => setIsClearModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {t.clearConfirmMessage}
+                <br />
+                <strong className="text-rose-600 font-mono text-sm block mt-2 text-center select-all">
+                  {t.confirmPhrase}
+                </strong>
+              </p>
+
+              <input
+                type="text"
+                value={confirmInput}
+                onChange={(e) => setConfirmInput(e.target.value)}
+                placeholder={t.clearConfirmPlaceholder}
+                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition"
+              />
+
+              <div className="flex flex-col space-y-2 pt-2">
+                <button
+                  disabled={confirmInput !== t.confirmPhrase}
+                  onClick={() => {
+                    onClearAllocations();
+                    setIsClearModalOpen(false);
+                    alert(t.clearSuccess);
+                  }}
+                  className={`w-full py-3 rounded-xl text-sm font-bold transition flex items-center justify-center space-x-2 ${
+                    confirmInput === t.confirmPhrase
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/20'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>{t.clearConfirmButton}</span>
+                </button>
+                <button
+                  onClick={() => setIsClearModalOpen(false)}
+                  className="w-full py-2.5 text-xs text-slate-500 hover:text-slate-800 font-medium transition"
+                >
+                  {t.cancel}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Assistant Section */}
       <div className="bg-gradient-to-br from-blue-900/10 to-indigo-900/10 border border-blue-200/50 rounded-2xl p-6 shadow-sm">
@@ -491,7 +333,7 @@ export default function AdminDashboard({
               {totalTeachers}
             </span>
             <div className="text-[11px] text-slate-500">
-              {teachers.filter(tchr => tchr.available).length} disponíveis / {teachers.filter(tchr => !tchr.available).length} indisponíveis
+              {availableTeachers.length} disponíveis / {unavailableTeachersCount} indisponíveis
             </div>
           </div>
           <div className="h-10 w-10 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-center text-blue-600">
@@ -577,7 +419,7 @@ export default function AdminDashboard({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Conflicts list */}
-        <div className="lg:col-span-7 bg-white border border-slate-200 shadow-sm rounded-xl p-5">
+        <div className="lg:col-span-12 bg-white border border-slate-200 shadow-sm rounded-xl p-5">
           <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
             <div className="flex items-center space-x-2">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -612,44 +454,6 @@ export default function AdminDashboard({
             </div>
           )}
         </div>
-
-        {/* Back notifications feed */}
-        <div className="lg:col-span-5 bg-white border border-slate-200 shadow-sm rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-            <div className="flex items-center space-x-2">
-              <Bell className="h-5 w-5 text-indigo-500" />
-              <h3 className="font-semibold text-slate-800 text-sm">
-                {t.recentActivity}
-              </h3>
-            </div>
-            <span className="text-indigo-600 bg-indigo-50 text-[10px] px-2 py-0.5 rounded font-mono font-semibold">
-              Live Feed
-            </span>
-          </div>
-
-          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-            {notificationsLog.length > 0 ? (
-              notificationsLog.slice().reverse().map((log) => (
-                <div 
-                  key={log.id} 
-                  className="bg-slate-50 rounded-lg p-3 border border-slate-100 hover:border-slate-200 transition text-xs space-y-1"
-                >
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                    <span className="font-medium text-slate-700">{log.recipientName}</span>
-                    <span>{log.timestamp}</span>
-                  </div>
-                  <h4 className="font-bold text-slate-800 text-[11px]">{log.title}</h4>
-                  <p className="text-slate-600 line-clamp-2 text-[11px]">{log.message}</p>
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-12 text-slate-400 text-xs">
-                <p>{t.noActivity}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
       </div>
     </div>
   );

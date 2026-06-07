@@ -82,67 +82,80 @@ export function autoAllocate(
   exam: Exam,
   rooms: Room[],
   teachers: Teacher[],
-  allAllocations: Allocation[], // Existing allocations across ALL exams (to prevent double bookings)
-  currentExamAllocations: Allocation[] // Allocations just for this exam
+  allAllocations: Allocation[], // Existing allocations across ALL exams
+  currentExamAllocations: Allocation[], // Allocations just for this exam
+  allExams: Exam[] // Needed to check dates of other allocations
 ): AllocationResult {
   const resultAllocations: Allocation[] = [...currentExamAllocations];
   const logsArr: Array<{ teacherId: string; message: string }> = [];
   const warnings: string[] = [];
 
-  // Determine which teachers are already busy at this exam's date & time in other exams
-  const busyTeacherIdsAtSession = new Set<string>();
-  
-  // Track assigned teachers during this allocation batch
-  const assignedInThisBatch = new Set<string>();
+  const STEALTH_NAME = "Pedro Miguel Freitas dos Santos";
 
-  // 0. Global duplication lock: Check other exams on the same day/period
-  const examPeriod = getPeriodFromTime(exam.time);
+  // 0. Prepare teacher fatigue map (Rule 8: Pool exhaustion)
+  const fatigueMap = new Map<string, number>();
+  teachers.forEach(t => fatigueMap.set(t.id, 0));
   allAllocations.forEach(a => {
-    // Only check if it's NOT this current exam we're allocating
-    if (a.examId !== exam.id) {
-      // We need to know the date/time of that other exam - normally passed in the context but let's assume
-      // the caller filtered allAllocations correctly or we check IDs.
-      // In a real scenario, we'd check if the other allocation's exam has same date/period.
+    if (a.invigilator1Id) fatigueMap.set(a.invigilator1Id, (fatigueMap.get(a.invigilator1Id) || 0) + 1);
+    if (a.invigilator2Id) fatigueMap.set(a.invigilator2Id, (fatigueMap.get(a.invigilator2Id) || 0) + 1);
+    if (a.substituteId) fatigueMap.set(a.substituteId, (fatigueMap.get(a.substituteId) || 0) + 1);
+  });
+
+  // 1. Identify teachers busy on the SAME DAY (Rule 4: Avoid same day even different hour)
+  const busyOnSameDay = new Set<string>();
+  allAllocations.forEach(a => {
+    const otherExam = allExams.find(e => e.id === a.examId);
+    if (otherExam && otherExam.date === exam.date && otherExam.id !== exam.id) {
+      if (a.invigilator1Id) busyOnSameDay.add(a.invigilator1Id);
+      if (a.invigilator2Id) busyOnSameDay.add(a.invigilator2Id);
+      if (a.substituteId) busyOnSameDay.add(a.substituteId);
     }
   });
 
-  // Collect manual or pre-existing allocations for this exam session to avoid double assignments
+  // Track assigned teachers during this specific allocation call
+  const assignedInThisBatch = new Set<string>();
   currentExamAllocations.forEach(alloc => {
     if (alloc.invigilator1Id) assignedInThisBatch.add(alloc.invigilator1Id);
     if (alloc.invigilator2Id) assignedInThisBatch.add(alloc.invigilator2Id);
     if (alloc.substituteId) assignedInThisBatch.add(alloc.substituteId);
   });
 
-  /**
-   * REGRAS DE NEGÓCIO:
-   * 1. Apenas professores com role estritamente "Professor" (ou vazio/null) participam.
-   * 2. Justiça na Distribuição: Usamos Fisher-Yates shuffle para randomizar.
-   * 3. Impedimento por Disciplina: Partial match com nome do exame.
-   */
+  // 2. Filter Pool based on business rules
   const pool = teachers.filter(t => {
-    // Apenas available: true
-    if (!t.available) return false;
-    
-    // Ignorar professores com cargos específicos (Coordenadores, Direção, etc)
-    // Se o cargo estiver vazio ou for "Professor", ele participa.
+    // Rule: Role must be "Professor" or empty
     const tRole = (t.role || "").toLowerCase();
-    if (tRole !== "" && tRole !== "professor") return false;
+    const hasNoSpecialRole = tRole === "" || tRole === "professor";
+    if (!t.available || !hasNoSpecialRole) return false;
 
-    // Verificar indisponibilidades pessoais
+    // Rule: Personal unavailabilities
     if (isTeacherUnavailableAt(t, exam.date, exam.time)) return false;
+
+    // Rule: One exam per day
+    if (busyOnSameDay.has(t.id)) return false;
+
+    // Rule: Pedro Stealth Rule (part 1: exclude from main pool)
+    if (t.name === STEALTH_NAME) return false;
 
     return true;
   });
 
-  // Shuffle pool using Fisher-Yates for fairness
-  const shuffledPool = [...pool];
-  for (let i = shuffledPool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffledPool[i], shuffledPool[j]] = [shuffledPool[j], shuffledPool[i]];
-  }
+  // 3. Sort pool by fatigue (exhaustion rule) and then shuffle within same fatigue levels
+  const sortedPool = [...pool].sort((a, b) => {
+    const fatigueA = fatigueMap.get(a.id) || 0;
+    const fatigueB = fatigueMap.get(b.id) || 0;
+    if (fatigueA !== fatigueB) return fatigueA - fatigueB;
+    return Math.random() - 0.5;
+  });
 
-  // 1. Group rooms to assign. For each room, allocate Invigilator 1 and Invigilator 2
-  rooms.forEach(room => {
+  // 4. Room Priority Assignment (Rule: assign rooms by priority)
+  // Standard exams get high priority rooms. LNM/Modalities get lower priority.
+  const isSpecialExam = (exam.variant || "").includes("LNM") || (exam.modality && exam.modality !== "");
+  const sortedRooms = [...rooms].sort((a, b) => {
+    return isSpecialExam ? b.priority - a.priority : a.priority - b.priority;
+  });
+
+  // 5. Allocation process
+  sortedRooms.forEach(room => {
     let alloc = resultAllocations.find(a => a.roomId === room.id && a.examId === exam.id);
     if (!alloc) {
       alloc = {
@@ -154,31 +167,18 @@ export function autoAllocate(
         substituteId: null
       };
       resultAllocations.push(alloc);
-    } else {
-      alloc.substituteId = null;
     }
 
-    const positions: Array<'invigilator1Id' | 'invigilator2Id'> = [
-      'invigilator1Id',
-      'invigilator2Id'
-    ];
-
+    const positions: Array<'invigilator1Id' | 'invigilator2Id'> = ['invigilator1Id', 'invigilator2Id'];
     positions.forEach(pos => {
       if (alloc && !alloc[pos]) {
-        // Criteria 1: Not assigned in this batch
-        // Criteria 2: NO subject conflict
-        let candidate = shuffledPool.find(t => 
-          !assignedInThisBatch.has(t.id) && 
-          !hasSubjectConflict(t, exam)
-        );
-
-        // If no candidate without subject conflict exists, use an available teacher anyway with warning
+        let candidate = sortedPool.find(t => !assignedInThisBatch.has(t.id) && !hasSubjectConflict(t, exam));
+        
+        // Fallback: use anyone from pool if conflict is unavoidable
         if (!candidate) {
-          candidate = shuffledPool.find(t => !assignedInThisBatch.has(t.id));
+          candidate = sortedPool.find(t => !assignedInThisBatch.has(t.id));
           if (candidate) {
-            warnings.push(
-              `Atenção: O docente ${candidate.name} foi alocado ao exame de ${exam.name} na ${room.name} apesar do conflito disciplinar.`
-            );
+            warnings.push(`Conflito disciplinar inevitável: ${candidate.name} alocado em ${room.name}.`);
           }
         }
 
@@ -187,41 +187,38 @@ export function autoAllocate(
           assignedInThisBatch.add(candidate.id);
           logsArr.push({
             teacherId: candidate.id,
-            message: `Alocado como ${
-              pos === 'invigilator1Id' ? 'Vigilante 1' : 'Vigilante 2'
-            } na ${room.name} para o exame de ${exam.name}.`
+            message: `Vigilante ${pos === 'invigilator1Id' ? '1' : '2'} em ${room.name} (${exam.name}).`
           });
         }
-      } else if (alloc && alloc[pos]) {
-        assignedInThisBatch.add(alloc[pos]!);
       }
     });
   });
 
-  // 2. Allocate a General Substitute per room
-  rooms.forEach(room => {
+  // 6. Allocate Substitutes (Rule: Pedro can be chosen as last resort here)
+  sortedRooms.forEach(room => {
     const alloc = resultAllocations.find(a => a.roomId === room.id && a.examId === exam.id);
-    if (alloc) {
-      if (!alloc.substituteId) {
-        let candidate = shuffledPool.find(t => 
-          !assignedInThisBatch.has(t.id) && 
-          !hasSubjectConflict(t, exam)
-        );
+    if (alloc && !alloc.substituteId) {
+      let candidate = sortedPool.find(t => !assignedInThisBatch.has(t.id) && !hasSubjectConflict(t, exam));
+      
+      if (!candidate) {
+        candidate = sortedPool.find(t => !assignedInThisBatch.has(t.id));
+      }
 
-        if (!candidate) {
-          candidate = shuffledPool.find(t => !assignedInThisBatch.has(t.id));
+      // Rule: Pedro Stealth Rule (part 2: last resort for substitute)
+      if (!candidate) {
+        const pedro = teachers.find(t => t.name === STEALTH_NAME);
+        if (pedro && !assignedInThisBatch.has(pedro.id) && !busyOnSameDay.has(pedro.id) && !isTeacherUnavailableAt(pedro, exam.date, exam.time)) {
+          candidate = pedro;
         }
+      }
 
-        if (candidate) {
-          alloc.substituteId = candidate.id;
-          assignedInThisBatch.add(candidate.id);
-          logsArr.push({
-            teacherId: candidate.id,
-            message: `Convocado(a) como Professor(a) Suplente Geral de Apoio para o exame de ${exam.name}.`
-          });
-        }
-      } else {
-        assignedInThisBatch.add(alloc.substituteId);
+      if (candidate) {
+        alloc.substituteId = candidate.id;
+        assignedInThisBatch.add(candidate.id);
+        logsArr.push({
+          teacherId: candidate.id,
+          message: `Suplente em ${room.name} (${exam.name}).`
+        });
       }
     }
   });

@@ -20,6 +20,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(room)
     }).then(r => r.json()),
+    updateAll: (rooms: Room[]) => fetch(`${API_BASE}/rooms`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rooms })
+    }).then(r => r.json()),
     delete: (id: string) => fetch(`${API_BASE}/rooms?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
   },
   exams: {
@@ -75,6 +80,11 @@ export const api = {
   },
   import: {
     mapaGeral: (data: { teachers: any[], exams: any[], roles: any[], confirmReplace: boolean }) => fetch(`${API_BASE}/import-mapa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(r => r.json()),
+    bulk: (data: { teachers: any[], exams: any[], rooms: any[], roles: any[] }) => fetch(`${API_BASE}/bulk-data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
