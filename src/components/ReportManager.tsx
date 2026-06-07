@@ -8,14 +8,11 @@ import { Teacher, Room, Exam, Allocation, Language } from '../types';
 import { translations } from '../translations';
 import { 
   Download, 
-  Printer, 
-  CheckCircle, 
-  FileText
+  CheckCircle
 } from 'lucide-react';
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { getPeriodFromTime } from '../utils/scheduler';
 
 interface ReportManagerProps {
   lang: Language;
@@ -34,21 +31,141 @@ export default function ReportManager({
 }: ReportManagerProps) {
   const t = translations[lang];
 
-  // Calculations: count invigilations per teacher (Fatigue counter)
-  const teacherStats = (Array.isArray(teachers) ? teachers : []).map(tchr => {
-    let count = 0;
-    if (Array.isArray(allocations)) {
-      allocations.forEach(alloc => {
-        if (alloc.invigilator1Id === tchr.id) count++;
-        if (alloc.invigilator2Id === tchr.id) count++;
-        if (alloc.substituteId === tchr.id) count++;
-      });
+  const formatExamIdentity = (exam: Exam) => {
+    if (lang === 'pt') {
+      return [
+        `Exame: ${exam.name}`,
+        `Data: ${exam.date}`,
+        `Hora: ${exam.time}`,
+        `Ano: ${exam.year}º`,
+        `Código: ${exam.code || '-'}`,
+        `Turno: ${exam.shift || '-'}`,
+        `Modalidade: ${exam.modality || '-'}`,
+        `Fase: ${exam.phase}`,
+        `Variante: ${exam.variant || '-'}`
+      ].join(' | ');
     }
-    return {
-      teacher: tchr,
-      count
+
+    return [
+      `Exam: ${exam.name}`,
+      `Date: ${exam.date}`,
+      `Time: ${exam.time}`,
+      `Year: ${exam.year}`,
+      `Code: ${exam.code || '-'}`,
+      `Shift: ${exam.shift || '-'}`,
+      `Modality: ${exam.modality || '-'}`,
+      `Phase: ${exam.phase}`,
+      `Variant: ${exam.variant || '-'}`
+    ].join(' | ');
+  };
+
+  const getRoleLabel = (role: 'invigilator1' | 'invigilator2' | 'substitute') => {
+    if (role === 'invigilator1') return lang === 'pt' ? 'Vigilante 1' : 'Invigilator 1';
+    if (role === 'invigilator2') return lang === 'pt' ? 'Vigilante 2' : 'Invigilator 2';
+    return lang === 'pt' ? 'Suplente' : 'Substitute';
+  };
+
+  const getValidAllocationRecords = () => {
+    const examById = new Map((Array.isArray(exams) ? exams : []).map(exam => [exam.id, exam]));
+    const roomById = new Map((Array.isArray(rooms) ? rooms : []).map(room => [room.id, room]));
+
+    return (Array.isArray(allocations) ? allocations : [])
+      .map(alloc => {
+        const exam = examById.get(alloc.examId);
+        const room = roomById.get(alloc.roomId);
+        if (!exam || !room) return null;
+        if (Array.isArray(exam.roomIds) && exam.roomIds.length > 0 && !exam.roomIds.includes(alloc.roomId)) return null;
+        return { alloc, exam, room };
+      })
+      .filter((record): record is { alloc: Allocation; exam: Exam; room: Room } => Boolean(record));
+  };
+
+  const handleExportTeachersPDF = () => {
+    const records = getValidAllocationRecords();
+    const teacherById = new Map((Array.isArray(teachers) ? teachers : []).map(teacher => [teacher.id, teacher]));
+
+    type TeacherAssignment = {
+      teacherId: string;
+      role: 'invigilator1' | 'invigilator2' | 'substitute';
+      exam: Exam;
+      room: Room;
     };
-  }).sort((a, b) => b.count - a.count);
+
+    const assignments: TeacherAssignment[] = [];
+    records.forEach(({ alloc, exam, room }) => {
+      if (alloc.invigilator1Id) assignments.push({ teacherId: alloc.invigilator1Id, role: 'invigilator1', exam, room });
+      if (alloc.invigilator2Id) assignments.push({ teacherId: alloc.invigilator2Id, role: 'invigilator2', exam, room });
+      if (alloc.substituteId) assignments.push({ teacherId: alloc.substituteId, role: 'substitute', exam, room });
+    });
+
+    const assignmentsByTeacher = new Map<string, TeacherAssignment[]>();
+    assignments.forEach(assignment => {
+      if (!assignmentsByTeacher.has(assignment.teacherId)) assignmentsByTeacher.set(assignment.teacherId, []);
+      assignmentsByTeacher.get(assignment.teacherId)!.push(assignment);
+    });
+
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(lang === 'pt' ? 'Resumo de Atribuições por Professor' : 'Teacher Assignments Summary', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`${new Date().toLocaleDateString()}`, 14, 22);
+
+    const headers = [[
+      lang === 'pt' ? 'Nome' : 'Name',
+      lang === 'pt' ? 'Grupo' : 'Group',
+      lang === 'pt' ? 'Total' : 'Total',
+      lang === 'pt' ? 'Atribuições (Exame/Data/Hora/Sala/Função)' : 'Assignments (Exam/Date/Time/Room/Role)'
+    ]];
+
+    const data: string[][] = [];
+    const sortedTeachers = [...(Array.isArray(teachers) ? teachers : [])].sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedTeachers.forEach(teacher => {
+      const teacherAssignments = [...(assignmentsByTeacher.get(teacher.id) || [])].sort((a, b) => {
+        if (a.exam.date !== b.exam.date) return a.exam.date.localeCompare(b.exam.date);
+        if (a.exam.time !== b.exam.time) return a.exam.time.localeCompare(b.exam.time);
+        if (a.exam.name !== b.exam.name) return a.exam.name.localeCompare(b.exam.name);
+        return a.room.name.localeCompare(b.room.name, undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      if (teacherAssignments.length === 0) {
+        data.push([
+          teacher.name,
+          teacher.subject_group || '-',
+          '0',
+          lang === 'pt' ? 'Sem atribuições.' : 'No assignments.'
+        ]);
+        return;
+      }
+
+      teacherAssignments.forEach((assignment, idx) => {
+        const detail = `${getRoleLabel(assignment.role)} | Sala: ${assignment.room.name} | ${formatExamIdentity(assignment.exam)}`;
+        data.push([
+          idx === 0 ? teacher.name : '',
+          idx === 0 ? (teacher.subject_group || '-') : '',
+          idx === 0 ? String(teacherAssignments.length) : '',
+          detail
+        ]);
+      });
+    });
+
+    autoTable(doc, {
+      head: headers,
+      body: data,
+      startY: 30,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] },
+      styles: { fontSize: 8, cellPadding: 1.8, overflow: 'linebreak' },
+      columnStyles: {
+        0: { cellWidth: 45 },
+        1: { cellWidth: 18 },
+        2: { cellWidth: 12, halign: 'center' },
+        3: { cellWidth: 'auto' }
+      }
+    });
+
+    doc.save(`resumo_atribuicoes_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
 
   const handleExportPDF = () => {
     const doc = new jsPDF({
@@ -57,10 +174,23 @@ export default function ReportManager({
       format: 'a4'
     });
 
-    const activeExams = (Array.isArray(exams) ? exams : []).filter(exam => {
-      const examAllocs = Array.isArray(allocations) ? allocations.filter(a => a.examId === exam.id) : [];
-      return examAllocs.length > 0;
+    const records = getValidAllocationRecords();
+    const teacherById = new Map((Array.isArray(teachers) ? teachers : []).map(teacher => [teacher.id, teacher]));
+    const allocationsByExam = new Map<string, Array<{ alloc: Allocation; room: Room }>>();
+
+    records.forEach(({ alloc, exam, room }) => {
+      if (!allocationsByExam.has(exam.id)) allocationsByExam.set(exam.id, []);
+      allocationsByExam.get(exam.id)!.push({ alloc, room });
     });
+
+    const activeExams = (Array.isArray(exams) ? exams : [])
+      .filter(exam => allocationsByExam.has(exam.id))
+      .sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        if (a.time !== b.time) return a.time.localeCompare(b.time);
+        if (a.name !== b.name) return a.name.localeCompare(b.name);
+        return a.id.localeCompare(b.id);
+      });
 
     if (activeExams.length === 0) {
       alert(lang === 'pt' ? 'Nenhuma alocação registada para exportar.' : 'No allocations registered to export.');
@@ -70,55 +200,101 @@ export default function ReportManager({
     const title = lang === 'pt' ? 'Escala Oficial de Vigilâncias - Exames Nacionais' : 'Official National Exams Invigilation Scale';
     const schoolName = 'Escola Secundária D. João II';
     const schoolYearLabel = lang === 'pt' ? 'Ano Letivo: 2025/2026' : 'School Year: 2025/2026';
+    const groupMap = new Map<string, { date: string; time: string; exams: Exam[] }>();
 
-    activeExams.forEach((exam, examIdx) => {
-      if (examIdx > 0) doc.addPage();
-      
-      let currentY = 15;
-      doc.setFillColor(15, 23, 42); 
-      doc.rect(10, currentY, 190, 30, 'F');
+    activeExams.forEach(exam => {
+      const key = `${exam.date}@@${exam.time}`;
+      if (!groupMap.has(key)) groupMap.set(key, { date: exam.date, time: exam.time, exams: [] });
+      groupMap.get(key)!.exams.push(exam);
+    });
+
+    const groupedSlots = [...groupMap.values()].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.time.localeCompare(b.time);
+    });
+
+    const drawSlotHeader = (slotDate: string, slotTime: string) => {
+      let startY = 12;
+      doc.setFillColor(15, 23, 42);
+      doc.rect(10, startY, 190, 34, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(14);
-      doc.text(schoolName, 15, currentY + 10);
+      doc.text(schoolName, 15, startY + 10);
       doc.setFontSize(9);
-      doc.text(schoolYearLabel, 15, currentY + 18);
+      doc.text(schoolYearLabel, 15, startY + 17);
       doc.setFontSize(11);
-      doc.text(title, 15, currentY + 25);
-
-      currentY += 40;
-
-      const examAllocs = Array.isArray(allocations) ? allocations.filter(a => a.examId === exam.id) : [];
-      
-      doc.setFillColor(241, 245, 249);
-      doc.rect(10, currentY, 190, 10, 'F');
-      doc.setTextColor(15, 23, 42);
+      doc.text(title, 15, startY + 24);
       doc.setFontSize(10);
-      const examPeriod = getPeriodFromTime(exam.time) === '09:00' ? t.periodMorning : t.periodAfternoon;
-      const examLabel = `${exam.name} (${exam.year}º Ano) | ${exam.date} • ${examPeriod} (${exam.time}) | Fase ${exam.phase}`;
-      doc.text(examLabel, 13, currentY + 6.5);
+      doc.text(
+        lang === 'pt'
+          ? `Dia: ${slotDate} | Hora: ${slotTime}`
+          : `Date: ${slotDate} | Time: ${slotTime}`,
+        15,
+        startY + 31
+      );
+      return startY + 40;
+    };
 
-      currentY += 15;
+    groupedSlots.forEach((slot, slotIdx) => {
+      if (slotIdx > 0) doc.addPage();
+      let currentY = drawSlotHeader(slot.date, slot.time);
 
-      const tableHeaders = [[t.roomNameCol, t.invigilator1, t.invigilator2, t.presenceSignature]];
-      const tableData = examAllocs.map(alloc => {
-        const roomObj = Array.isArray(rooms) ? rooms.find(r => r.id === alloc.roomId) : null;
-        const v1 = Array.isArray(teachers) ? teachers.find(tchr => tchr.id === alloc.invigilator1Id) : null;
-        const v2 = Array.isArray(teachers) ? teachers.find(tchr => tchr.id === alloc.invigilator2Id) : null;
-        return [
-          roomObj?.name || '-',
-          v1?.name || '-',
-          v2?.name || '-',
-          '____________________'
-        ];
-      });
+      slot.exams.forEach(exam => {
+        const examRows = [...(allocationsByExam.get(exam.id) || [])].sort((a, b) =>
+          a.room.name.localeCompare(b.room.name, undefined, { numeric: true, sensitivity: 'base' })
+        );
+        if (examRows.length === 0) return;
 
-      autoTable(doc, {
-        startY: currentY,
-        head: tableHeaders,
-        body: tableData,
-        theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42] },
-        margin: { left: 10, right: 10 }
+        const estimatedHeight = 16 + (examRows.length * 3 * 8);
+        if (currentY + estimatedHeight > 280) {
+          doc.addPage();
+          currentY = drawSlotHeader(slot.date, slot.time);
+        }
+
+        const examLabelLines = doc.splitTextToSize(formatExamIdentity(exam), 183);
+        const examHeaderHeight = Math.max(12, examLabelLines.length * 5 + 4);
+        doc.setFillColor(241, 245, 249);
+        doc.rect(10, currentY, 190, examHeaderHeight, 'F');
+        doc.setTextColor(15, 23, 42);
+        doc.setFontSize(10);
+        doc.text(examLabelLines, 13, currentY + 5);
+        currentY += examHeaderHeight + 2;
+
+        const tableHeaders = [[
+          lang === 'pt' ? 'Sala' : 'Room',
+          lang === 'pt' ? 'Função' : 'Role',
+          lang === 'pt' ? 'Docente' : 'Teacher',
+          lang === 'pt' ? 'Assinatura' : 'Signature'
+        ]];
+
+        const tableData: string[][] = [];
+        examRows.forEach(({ alloc, room }) => {
+          const v1 = alloc.invigilator1Id ? teacherById.get(alloc.invigilator1Id)?.name || '-' : '-';
+          const v2 = alloc.invigilator2Id ? teacherById.get(alloc.invigilator2Id)?.name || '-' : '-';
+          const sub = alloc.substituteId ? teacherById.get(alloc.substituteId)?.name || '-' : '-';
+
+          tableData.push([room.name, getRoleLabel('invigilator1'), v1, '____________________']);
+          tableData.push(['', getRoleLabel('invigilator2'), v2, '____________________']);
+          tableData.push(['', getRoleLabel('substitute'), sub, '____________________']);
+        });
+
+        autoTable(doc, {
+          startY: currentY,
+          head: tableHeaders,
+          body: tableData,
+          theme: 'grid',
+          headStyles: { fillColor: [15, 23, 42] },
+          styles: { fontSize: 9, cellPadding: 1.8 },
+          margin: { left: 10, right: 10 },
+          columnStyles: {
+            0: { cellWidth: 32 },
+            1: { cellWidth: 32 },
+            2: { cellWidth: 'auto' },
+            3: { cellWidth: 44 }
+          }
+        });
+
+        currentY = ((doc as any).lastAutoTable?.finalY || currentY) + 6;
       });
     });
 
@@ -134,46 +310,7 @@ export default function ReportManager({
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => {
-              const doc = new jsPDF();
-              doc.setFontSize(16);
-              doc.text(lang === 'pt' ? 'Resumo de Atribuições por Professor' : 'Teacher Assignments Summary', 14, 15);
-              doc.setFontSize(10);
-              doc.text(`${new Date().toLocaleDateString()}`, 14, 22);
-
-              const headers = [[
-                lang === 'pt' ? 'Nome' : 'Name', 
-                lang === 'pt' ? 'Grupo' : 'Group', 
-                lang === 'pt' ? 'Total Vigilâncias/Suplências' : 'Total Invigilations/Standbys'
-              ]];
-              
-              const data = teachers
-                .filter(tchr => {
-                  // Rule: Only include available teachers with no special role (or role "professor")
-                  const tRole = (tchr.role || "").toLowerCase();
-                  const isProfessor = tRole === "" || tRole === "professor";
-                  return tchr.available && isProfessor;
-                })
-                .map(tchr => {
-                  let count = 0;
-                  allocations.forEach(alloc => {
-                    if (alloc.invigilator1Id === tchr.id) count++;
-                    if (alloc.invigilator2Id === tchr.id) count++;
-                    if (alloc.substituteId === tchr.id) count++;
-                  });
-                  return [tchr.name, tchr.subject_group, count.toString()];
-                })
-                .sort((a, b) => a[0].localeCompare(b[0]));
-
-              autoTable(doc, { 
-                head: headers, 
-                body: data, 
-                startY: 30,
-                theme: 'grid',
-                headStyles: { fillColor: [15, 23, 42] }
-              });
-              doc.save(`resumo_atribuicoes_${new Date().toISOString().slice(0, 10)}.pdf`);
-            }}
+            onClick={handleExportTeachersPDF}
             className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
           >
             <Download className="h-4 w-4" />

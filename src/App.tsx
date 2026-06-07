@@ -524,19 +524,34 @@ export default function App() {
   };
 
   const handleClearAllocationsAll = async () => {
-    setIsLoading(true);
+    if (operationState.status === 'running') return;
+    beginOperation(lang === 'pt' ? 'Limpeza Global de Vigilantes' : 'Global Invigilator Cleanup');
+    pushOperationLog(lang === 'pt' ? 'A limpar alocações de vigilantes...' : 'Clearing invigilator allocations...');
+    setOperationProgress(15);
+    await waitForUiTick();
+
     try {
       await api.allocations.clearAll();
-      // Clear local state immediately to avoid sync issues
+      setOperationProgress(50);
+      pushOperationLog(lang === 'pt' ? 'Alocações removidas na base de dados.' : 'Allocations removed from database.');
+      await waitForUiTick();
+
       setAllocations([]);
-      // Force a re-fetch to be absolutely sure
+
       const freshAllocations = await api.allocations.getAll();
-      setAllocations(Array.isArray(freshAllocations) ? freshAllocations : []);
+      const normalized = Array.isArray(freshAllocations) ? freshAllocations : [];
+      setAllocations(normalized);
+
+      setOperationProgress(100);
+      finishOperation(
+        'done',
+        lang === 'pt'
+          ? 'Limpeza de vigilantes concluída. Pode rever os logs e clicar em OK.'
+          : 'Invigilator cleanup completed. Review the logs and click OK.'
+      );
     } catch (err) {
       console.error('Error clearing allocations:', err);
-      alert('Erro ao limpar alocações.');
-    } finally {
-      setIsLoading(false);
+      finishOperation('error', lang === 'pt' ? 'Erro ao limpar vigilantes.' : 'Error while clearing invigilators.');
     }
   };
 

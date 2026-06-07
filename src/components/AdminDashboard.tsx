@@ -33,7 +33,7 @@ interface AdminDashboardProps {
   onAutoTrigger: () => void;
   onAutoTriggerRooms: () => void;
   onClearRooms: () => void;
-  onClearAllocations: () => void;
+  onClearAllocations: () => Promise<void> | void;
   onRefreshData: () => void;
   isSystemTaskRunning?: boolean;
 }
@@ -270,10 +270,9 @@ export default function AdminDashboard({
               <div className="flex flex-col space-y-2 pt-2">
                 <button
                   disabled={confirmInput !== t.confirmPhrase}
-                  onClick={() => {
-                    onClearAllocations();
+                  onClick={async () => {
+                    await Promise.resolve(onClearAllocations());
                     setIsClearModalOpen(false);
-                    alert(t.clearSuccess);
                   }}
                   className={`w-full py-3 rounded-xl text-sm font-bold transition flex items-center justify-center space-x-2 ${
                     confirmInput === t.confirmPhrase
