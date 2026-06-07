@@ -474,6 +474,55 @@ export default function App() {
     }
   };
 
+  const handleClearRoomsAll = async () => {
+    if (operationState.status === 'running') return;
+    const confirmed = window.confirm(
+      lang === 'pt'
+        ? 'Pretende remover a associação de salas de todos os exames?'
+        : 'Do you want to remove room assignments from all exams?'
+    );
+    if (!confirmed) return;
+
+    beginOperation(lang === 'pt' ? 'Limpeza Global de Salas' : 'Global Room Cleanup');
+    pushOperationLog(lang === 'pt' ? 'A remover salas associadas em todos os exames...' : 'Removing assigned rooms from all exams...');
+    setOperationProgress(10);
+    await waitForUiTick();
+
+    try {
+      const updatedExams = exams.map(exam => ({
+        ...exam,
+        roomIds: []
+      }));
+
+      const total = updatedExams.length;
+      for (let i = 0; i < total; i++) {
+        await api.exams.save(updatedExams[i]);
+        if ((i + 1) % 5 === 0 || i === total - 1) {
+          const progress = 10 + Math.round(((i + 1) / Math.max(total, 1)) * 85);
+          setOperationProgress(progress);
+          pushOperationLog(
+            lang === 'pt'
+              ? `Exames atualizados: ${i + 1}/${total}`
+              : `Exams updated: ${i + 1}/${total}`
+          );
+          await waitForUiTick();
+        }
+      }
+
+      setExams(updatedExams);
+      setOperationProgress(100);
+      finishOperation(
+        'done',
+        lang === 'pt'
+          ? 'Salas removidas dos exames. Pode rever os logs e clicar em OK.'
+          : 'Rooms were removed from exams. Review logs and click OK.'
+      );
+    } catch (err) {
+      console.error('Error clearing exam rooms:', err);
+      finishOperation('error', lang === 'pt' ? 'Erro ao limpar salas dos exames.' : 'Error while clearing exam rooms.');
+    }
+  };
+
   const handleClearAllocationsAll = async () => {
     setIsLoading(true);
     try {
@@ -732,6 +781,7 @@ export default function App() {
                   allocations={allocations} 
                   onAutoTrigger={handleAutoTriggerAll}
                   onAutoTriggerRooms={handleAutoTriggerRooms}
+                  onClearRooms={handleClearRoomsAll}
                   onClearAllocations={handleClearAllocationsAll}
                   onRefreshData={handleRefreshData}
                   isSystemTaskRunning={operationState.status === 'running'}

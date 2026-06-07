@@ -110,18 +110,29 @@ function randomPick<T>(list: T[]): T {
   return list[idx];
 }
 
-function pickCandidateWithRound(
+function pickCandidateForPhase(
+  phase: AllocationRoleKey,
   candidates: Teacher[],
   roundAssigned: Set<string>
 ): Teacher | null {
   if (candidates.length === 0) return null;
 
-  const freshCandidates = candidates.filter(t => !roundAssigned.has(t.id));
-  if (freshCandidates.length > 0) return randomPick(freshCandidates);
+  const nonStealth = candidates.filter(t => !isStealthTeacher(t));
+  const baseCandidates = phase === "substituteId" ? candidates : nonStealth;
+  if (baseCandidates.length === 0) return null;
+
+  const freshCandidates = baseCandidates.filter(t => !roundAssigned.has(t.id));
+  if (freshCandidates.length > 0) {
+    if (phase === "substituteId") {
+      const freshNonStealth = freshCandidates.filter(t => !isStealthTeacher(t));
+      return randomPick(freshNonStealth.length > 0 ? freshNonStealth : freshCandidates);
+    }
+    return randomPick(freshCandidates);
+  }
 
   // Start a new fairness round when all current candidates were already used.
   roundAssigned.clear();
-  return randomPick(candidates);
+  return randomPick(baseCandidates);
 }
 
 function runAutoAllocationForPairs(
@@ -134,10 +145,12 @@ function runAutoAllocationForPairs(
   const examById = new Map(allExams.map(exam => [exam.id, exam]));
   const basePool = teachers.filter(t => t.available && hasNoSpecialRole(t));
   const targetAllocationByKey = new Map<string, Allocation>();
+  const teacherById = new Map(teachers.map(teacher => [teacher.id, teacher]));
   const warnings: string[] = [];
   const notifications: Array<{ teacherId: string; message: string }> = [];
   const roundAssigned = new Set<string>();
   const dayBusy = buildDayBusySet(baselineAllocations, examById);
+  const unresolvedSlots: Array<{ pair: { exam: Exam; room: Room }; phase: AllocationRoleKey }> = [];
 
   for (const alloc of existingTargetAllocations) {
     targetAllocationByKey.set(allocationKey(alloc.examId, alloc.roomId), { ...alloc });
@@ -183,18 +196,13 @@ function runAutoAllocationForPairs(
         if (hasSubjectConflict(teacher, pair.exam)) return false;
         if (isTeacherUnavailableOnDate(teacher, pair.exam.date)) return false;
         if (dayBusy.has(`${teacher.id}${dayKeySuffix}`)) return false;
-        if (phase !== "substituteId" && isStealthTeacher(teacher)) return false;
         return true;
       });
 
-      const nonStealth = allowedByRules.filter(t => !isStealthTeacher(t));
-      const pickable = nonStealth.length > 0 ? nonStealth : allowedByRules;
-      const selected = pickCandidateWithRound(pickable, roundAssigned);
+      const selected = pickCandidateForPhase(phase, allowedByRules, roundAssigned);
 
       if (!selected) {
-        warnings.push(
-          `Sem docente elegível para ${ROLE_LABEL_PT[phase]} em ${pair.room.name} (${pair.exam.name}, ${pair.exam.date}).`
-        );
+        unresolvedSlots.push({ pair, phase });
         continue;
       }
 
@@ -206,6 +214,75 @@ function runAutoAllocationForPairs(
         message: `${ROLE_LABEL_PT[phase]} em ${pair.room.name} - ${pair.exam.name} (${pair.exam.date}).`
       });
     }
+  }
+
+  // Last-resort policy for unresolved invigilator slots:
+  // try to place stealth teacher as Substitute by swapping with the allocated substitute.
+  // if still impossible, allow direct invigilator fallback.
+  const stealthTeacher = basePool.find(isStealthTeacher);
+  if (stealthTeacher) {
+    for (const unresolved of unresolvedSlots) {
+      if (unresolved.phase === "substituteId") continue;
+
+      const key = allocationKey(unresolved.pair.exam.id, unresolved.pair.room.id);
+      const alloc = targetAllocationByKey.get(key);
+      if (!alloc || alloc[unresolved.phase]) continue;
+
+      const dayKey = `${stealthTeacher.id}@@${unresolved.pair.exam.date}`;
+      const stealthAlreadyInAllocation = [alloc.invigilator1Id, alloc.invigilator2Id, alloc.substituteId].includes(stealthTeacher.id);
+
+      if (hasSubjectConflict(stealthTeacher, unresolved.pair.exam)) continue;
+      if (isTeacherUnavailableOnDate(stealthTeacher, unresolved.pair.exam.date)) continue;
+      if (!stealthAlreadyInAllocation && dayBusy.has(dayKey)) continue;
+
+      const substituteId = alloc.substituteId;
+      if (substituteId && substituteId !== stealthTeacher.id) {
+        const substituteTeacher = teacherById.get(substituteId);
+        const targetOtherInvigilatorId =
+          unresolved.phase === "invigilator1Id" ? alloc.invigilator2Id : alloc.invigilator1Id;
+        const canSwap = Boolean(
+          substituteTeacher &&
+          substituteTeacher.id !== targetOtherInvigilatorId &&
+          !hasSubjectConflict(substituteTeacher, unresolved.pair.exam) &&
+          !isTeacherUnavailableOnDate(substituteTeacher, unresolved.pair.exam.date)
+        );
+
+        if (canSwap) {
+          alloc[unresolved.phase] = substituteId;
+          alloc.substituteId = stealthTeacher.id;
+          dayBusy.add(dayKey);
+          roundAssigned.add(stealthTeacher.id);
+          notifications.push({
+            teacherId: substituteId,
+            message: `${ROLE_LABEL_PT[unresolved.phase]} em ${unresolved.pair.room.name} - ${unresolved.pair.exam.name} (${unresolved.pair.exam.date}).`
+          });
+          notifications.push({
+            teacherId: stealthTeacher.id,
+            message: `${ROLE_LABEL_PT.substituteId} em ${unresolved.pair.room.name} - ${unresolved.pair.exam.name} (${unresolved.pair.exam.date}).`
+          });
+          continue;
+        }
+      }
+
+      if (!stealthAlreadyInAllocation) {
+        alloc[unresolved.phase] = stealthTeacher.id;
+        dayBusy.add(dayKey);
+        roundAssigned.add(stealthTeacher.id);
+        notifications.push({
+          teacherId: stealthTeacher.id,
+          message: `${ROLE_LABEL_PT[unresolved.phase]} em ${unresolved.pair.room.name} - ${unresolved.pair.exam.name} (${unresolved.pair.exam.date}).`
+        });
+      }
+    }
+  }
+
+  for (const unresolved of unresolvedSlots) {
+    const key = allocationKey(unresolved.pair.exam.id, unresolved.pair.room.id);
+    const alloc = targetAllocationByKey.get(key);
+    if (!alloc || alloc[unresolved.phase]) continue;
+    warnings.push(
+      `Sem docente elegível para ${ROLE_LABEL_PT[unresolved.phase]} em ${unresolved.pair.room.name} (${unresolved.pair.exam.name}, ${unresolved.pair.exam.date}).`
+    );
   }
 
   return {

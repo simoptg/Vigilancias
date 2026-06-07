@@ -18,8 +18,7 @@ import {
   Send,
   Loader2,
   FileText,
-  X,
-  Wrench
+  X
 } from 'lucide-react';
 import { hasSubjectConflict } from '../utils/scheduler';
 import { api } from '../utils/api';
@@ -33,6 +32,7 @@ interface AdminDashboardProps {
   allocations: Allocation[];
   onAutoTrigger: () => void;
   onAutoTriggerRooms: () => void;
+  onClearRooms: () => void;
   onClearAllocations: () => void;
   onRefreshData: () => void;
   isSystemTaskRunning?: boolean;
@@ -46,6 +46,7 @@ export default function AdminDashboard({
   allocations,
   onAutoTrigger,
   onAutoTriggerRooms,
+  onClearRooms,
   onClearAllocations,
   onRefreshData,
   isSystemTaskRunning = false
@@ -60,29 +61,6 @@ export default function AdminDashboard({
   // Clear Confirmation State
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
-
-  const [isRepairing, setIsRepairing] = useState(false);
-
-  const handleRepairDB = async () => {
-    if (!confirm(lang === 'pt' ? 'Deseja executar a reparação da base de dados? Isto irá adicionar colunas em falta sem apagar dados.' : 'Run database repair? This will add missing columns without deleting data.')) return;
-    
-    setIsRepairing(true);
-    try {
-      const res = await fetch('/api/init-db?mode=repair');
-      const data = await res.json();
-      if (res.ok) {
-        alert(lang === 'pt' ? 'Base de dados reparada com sucesso!' : 'Database repaired successfully!');
-        onRefreshData();
-      } else {
-        throw new Error(data.details || 'Unknown error');
-      }
-    } catch (err) {
-      console.error('Repair failed:', err);
-      alert(lang === 'pt' ? 'Erro ao reparar base de dados: ' + err.message : 'Error repairing database: ' + err.message);
-    } finally {
-      setIsRepairing(false);
-    }
-  };
 
   const handleAskAI = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,21 +200,20 @@ export default function AdminDashboard({
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={handleRepairDB}
-            disabled={isRepairing}
-            className="flex items-center space-x-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-slate-900/10 cursor-pointer disabled:opacity-50"
-            title={lang === 'pt' ? 'Reparar esquema da base de dados' : 'Repair database schema'}
-          >
-            {isRepairing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
-            <span>{lang === 'pt' ? 'Reparar DB' : 'Repair DB'}</span>
-          </button>
-          <button
             onClick={onAutoTriggerRooms}
             disabled={isSystemTaskRunning}
             className="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-blue-900/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSystemTaskRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Home className="h-3.5 w-3.5" />}
             <span>{lang === 'pt' ? 'Atribuir salas' : 'Assign rooms'}</span>
+          </button>
+          <button
+            onClick={onClearRooms}
+            disabled={isSystemTaskRunning}
+            className="flex items-center space-x-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-slate-900/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Home className="h-3.5 w-3.5" />
+            <span>{lang === 'pt' ? 'Limpar salas' : 'Clear rooms'}</span>
           </button>
           <button
             onClick={onAutoTrigger}
@@ -254,7 +231,7 @@ export default function AdminDashboard({
             className="flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-amber-900/10 cursor-pointer"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            <span>{t.clearAllocations}</span>
+            <span>{lang === 'pt' ? 'Limpar vigilantes' : 'Clear invigilators'}</span>
           </button>
         </div>
       </div>
