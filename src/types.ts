@@ -41,6 +41,8 @@ export interface Exam {
   shift?: string | null; // e.g. "T1", "T2"
   modality?: string | null; // e.g. "LO", "SP", "NE", "EE"
   phase: string;        // "1", "2"
+  duration: number;     // In minutes
+  tolerance: number;    // In minutes
   roomIds?: string[];   // Associated room IDs for this exam
 }
 

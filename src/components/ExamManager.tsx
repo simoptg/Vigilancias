@@ -77,6 +77,14 @@ export default function ExamManager({
   const [shift, setShift] = useState<string | null>(null);
   const [modality, setModality] = useState<string | null>(null);
   const [phase, setPhase] = useState('1');
+  const [duration, setDuration] = useState(120);
+  const [tolerance, setTolerance] = useState(30);
+
+  const getDefaultTimes = (examYear: string, examName: string) => {
+    if (examYear === '9') return { duration: 90, tolerance: 30 };
+    if (examName.toLowerCase().includes('matemática')) return { duration: 150, tolerance: 30 };
+    return { duration: 120, tolerance: 30 };
+  };
 
   const handleOpenAdd = () => {
     setEditingExam(null);
@@ -90,6 +98,8 @@ export default function ExamManager({
     setShift(null);
     setModality(null);
     setPhase('1');
+    setDuration(120);
+    setTolerance(30);
     setIsModalOpen(true);
   };
 
@@ -105,6 +115,8 @@ export default function ExamManager({
     setShift(ex.shift || null);
     setModality(ex.modality || null);
     setPhase(ex.phase);
+    setDuration(ex.duration || 120);
+    setTolerance(ex.tolerance || 30);
     setIsModalOpen(true);
   };
 
@@ -115,33 +127,30 @@ export default function ExamManager({
       return;
     }
 
+    const examData = {
+      name,
+      subject_group: subjectGroup,
+      variant,
+      year,
+      code,
+      date,
+      time,
+      shift,
+      modality,
+      phase,
+      duration,
+      tolerance
+    };
+
     if (editingExam) {
       onUpdateExam({
         ...editingExam,
-        name,
-        subject_group: subjectGroup,
-        variant,
-        year,
-        code,
-        date,
-        time,
-        shift,
-        modality,
-        phase
+        ...examData
       });
     } else {
       onAddExam({
         id: crypto.randomUUID(),
-        name,
-        subject_group: subjectGroup,
-        variant,
-        year,
-        code,
-        date,
-        time,
-        shift,
-        modality,
-        phase
+        ...examData
       });
     }
     setIsModalOpen(false);
@@ -453,6 +462,17 @@ export default function ExamManager({
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Hora *</label>
                   <input type="time" required value={time} onChange={(e) => setTime(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Duração (min) *</label>
+                  <input type="number" required value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Tolerância (min) *</label>
+                  <input type="number" required value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500" />
                 </div>
               </div>
 

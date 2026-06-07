@@ -18,12 +18,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(mappedExams);
 
       case 'POST':
-        const { id, name, variant, subject_group, year, code, date, time, shift, modality, phase, roomIds } = req.body;
+        const { id, name, variant, subject_group, year, code, date, time, shift, modality, phase, duration, tolerance, roomIds } = req.body;
         
         if (id) {
           await sql`
-            INSERT INTO exams (id, name, variant, subject_group, year, code, date, time, shift, modality, phase, room_ids)
-            VALUES (${id}, ${name}, ${variant}, ${subject_group}, ${year}, ${code}, ${date}, ${time}, ${shift}, ${modality}, ${phase}, ${JSON.stringify(roomIds)})
+            INSERT INTO exams (id, name, variant, subject_group, year, code, date, time, shift, modality, phase, duration, tolerance, room_ids)
+            VALUES (${id}, ${name}, ${variant}, ${subject_group}, ${year}, ${code}, ${date}, ${time}, ${shift}, ${modality}, ${phase}, ${duration}, ${tolerance}, ${JSON.stringify(roomIds)})
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
               variant = EXCLUDED.variant,
@@ -35,12 +35,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               shift = EXCLUDED.shift,
               modality = EXCLUDED.modality,
               phase = EXCLUDED.phase,
+              duration = EXCLUDED.duration,
+              tolerance = EXCLUDED.tolerance,
               room_ids = EXCLUDED.room_ids
           `;
         } else {
           await sql`
-            INSERT INTO exams (name, variant, subject_group, year, code, date, time, shift, modality, phase, room_ids)
-            VALUES (${name}, ${variant}, ${subject_group}, ${year}, ${code}, ${date}, ${time}, ${shift}, ${modality}, ${phase}, ${JSON.stringify(roomIds)})
+            INSERT INTO exams (name, variant, subject_group, year, code, date, time, shift, modality, phase, duration, tolerance, room_ids)
+            VALUES (${name}, ${variant}, ${subject_group}, ${year}, ${code}, ${date}, ${time}, ${shift}, ${modality}, ${phase}, ${duration}, ${tolerance}, ${JSON.stringify(roomIds)})
           `;
         }
         return res.status(201).json({ message: 'Exam saved' });

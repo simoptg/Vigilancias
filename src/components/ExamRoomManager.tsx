@@ -104,19 +104,63 @@ export default function ExamRoomManager({
 
   const groupedExams = groupExamsByDate();
 
+  // Helper to add minutes to time string "HH:mm"
+  const addMinutes = (timeStr: string, minutes: number): string => {
+    const [hours, mins] = timeStr.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours, mins + minutes, 0, 0);
+    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  };
+
+  // Helper to compare two time strings "HH:mm"
+  const isTimeBefore = (t1: string, t2: string): boolean => {
+    return t1.localeCompare(t2) < 0;
+  };
+
   // Room Association Status Helper
-  // Returns conflicting exam if there is an overlapping reservation
-  const getRoomConflict = (room: Room, examToCheck: Exam): Exam | null => {
-    // Find if another exam on the same day/session has this room assigned
-    const conflicting = exams.find(ex => {
-      if (ex.id === examToCheck.id) return false;
-      // Overlapping session
-      if (ex.date === examToCheck.date && getPeriodFromTime(ex.time) === getPeriodFromTime(examToCheck.time)) {
-        return ex.roomIds?.includes(room.id);
+  // Returns conflicting exam or status if there is an overlapping reservation
+  const getRoomStatus = (room: Room, examToCheck: Exam): { 
+    status: 'free' | 'occupied' | 'warning', 
+    conflictingExam?: Exam,
+    message?: string 
+  } => {
+    // Find all exams on the same day that use this room
+    const examsInRoom = exams.filter(ex => 
+      ex.date === examToCheck.date && 
+      ex.roomIds?.includes(room.id) &&
+      ex.id !== examToCheck.id
+    );
+
+    for (const otherEx of examsInRoom) {
+      const otherStart = otherEx.time;
+      const otherEnd = addMinutes(otherStart, (otherEx.duration || 120) + (otherEx.tolerance || 30));
+      const bufferEnd = addMinutes(otherEnd, 45); // 45 min buffer for "free" status
+
+      const currentStart = examToCheck.time;
+      const currentEnd = addMinutes(currentStart, (examToCheck.duration || 120) + (examToCheck.tolerance || 30));
+
+      // 1. Absolute overlap (Occupied)
+      // If current exam starts before other exam ends, it's occupied
+      if (isTimeBefore(currentStart, otherEnd) && isTimeBefore(otherStart, currentEnd)) {
+        return { 
+          status: 'occupied', 
+          conflictingExam: otherEx,
+          message: lang === 'pt' ? 'Ocupada / Conflito' : 'Occupied / Conflict'
+        };
       }
-      return false;
-    });
-    return conflicting || null;
+
+      // 2. Warning period (within 45 min of previous exam end)
+      // If current exam starts after other exam ends, but before buffer ends
+      if (!isTimeBefore(currentStart, otherEnd) && isTimeBefore(currentStart, bufferEnd)) {
+        return { 
+          status: 'warning', 
+          conflictingExam: otherEx,
+          message: lang === 'pt' ? 'Atenção: Intervalo Curto' : 'Warning: Short Buffer'
+        };
+      }
+    }
+
+    return { status: 'free' };
   };
 
   const handleToggleRoom = (roomId: string) => {
@@ -130,13 +174,12 @@ export default function ExamRoomManager({
       // Verify conflict before adding
       const room = rooms.find(r => r.id === roomId);
       if (room) {
-        const conflict = getRoomConflict(room, currentExam);
-        if (conflict) {
-          // Let's draw an alert popup or block in modal
+        const { status, conflictingExam } = getRoomStatus(room, currentExam);
+        if (status === 'occupied' && conflictingExam) {
           alert(
             lang === 'pt'
-              ? `Impossível Associar!\nA sala "${room.name}" já se encontra em uso no Exame "${conflict.name}" no mesmo dia (${conflict.date}) e hora (${conflict.time}).`
-              : `Cannot Associate!\nRoom "${room.name}" is already reserved for Exam "${conflict.name}" on the same date (${conflict.date}) and time (${conflict.time}).`
+              ? `Impossível Associar!\nA sala "${room.name}" já se encontra em uso no Exame "${conflictingExam.name}" no mesmo dia (${conflictingExam.date}) e ainda não terá terminado (Duração + Tolerância).`
+              : `Cannot Associate!\nRoom "${room.name}" is already reserved for Exam "${conflictingExam.name}" and won't be finished yet (Duration + Tolerance).`
           );
           return;
         }
@@ -335,25 +378,26 @@ export default function ExamRoomManager({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {rooms.map(room => {
                 const isAssoc = currentExam.roomIds?.includes(room.id);
-                const conflict = getRoomConflict(room, currentExam);
+                const { status, conflictingExam, message } = getRoomStatus(room, currentExam);
 
                 return (
                   <div
                     key={room.id}
                     onClick={() => {
-                      if (!conflict) {
+                      if (status !== 'occupied') {
                         handleToggleRoom(room.id);
                       } else {
-                        // Let's still call to trigger the alert/safeguard
                         handleToggleRoom(room.id);
                       }
                     }}
                     className={`p-4 rounded-xl border transition flex flex-col justify-between gap-3 cursor-pointer select-none relative overflow-hidden ${
                       isAssoc 
                         ? 'border-emerald-600 bg-emerald-50/35 relative' 
-                        : conflict
+                        : status === 'occupied'
                           ? 'border-rose-250 bg-rose-50/20 opacity-60 cursor-not-allowed'
-                          : 'border-slate-150 bg-white hover:bg-slate-50'
+                          : status === 'warning'
+                            ? 'border-amber-400 bg-amber-50/40'
+                            : 'border-slate-150 bg-white hover:bg-slate-50'
                     }`}
                   >
                     {/* Ribbon or corner item */}
@@ -365,10 +409,10 @@ export default function ExamRoomManager({
 
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="p-1 rounded bg-slate-105 text-slate-500 bg-slate-100">
-                          <Home className="h-3.5 w-3.5 text-slate-600" />
+                        <span className={`p-1 rounded ${status === 'warning' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
+                          <Home className="h-3.5 w-3.5" />
                         </span>
-                        <span className="text-xs font-bold text-slate-800">
+                        <span className={`text-xs font-bold ${status === 'warning' ? 'text-amber-900' : 'text-slate-800'}`}>
                           {room.name}
                         </span>
                       </div>
@@ -385,10 +429,15 @@ export default function ExamRoomManager({
                           <Check className="h-2.5 w-2.5" />
                           {t.associatedBadge}
                         </span>
-                      ) : conflict ? (
+                      ) : status === 'occupied' ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800">
                           <AlertTriangle className="h-2.5 w-2.5" />
-                          {lang === 'pt' ? 'Ocupada / Conflito' : 'Occupied / Conflict'}
+                          {message}
+                        </span>
+                      ) : status === 'warning' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">
+                          <Clock className="h-2.5 w-2.5" />
+                          {message}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 uppercase tracking-wide">
@@ -396,9 +445,9 @@ export default function ExamRoomManager({
                         </span>
                       )}
 
-                      {conflict && (
-                        <div className="text-[9px] text-rose-650 max-w-[150px] truncate leading-none text-rose-700 italic">
-                          ({conflict.name})
+                      {conflictingExam && (
+                        <div className={`text-[9px] max-w-[150px] truncate leading-none italic ${status === 'warning' ? 'text-amber-700' : 'text-rose-700'}`}>
+                          ({conflictingExam.name})
                         </div>
                       )}
                     </div>
