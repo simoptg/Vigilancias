@@ -8,6 +8,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (method) {
       case 'GET':
         const { rows: allocations } = await sql`SELECT * FROM allocations`;
+        if (!allocations || !Array.isArray(allocations)) {
+          return res.status(200).json([]);
+        }
         const mappedAllocations = allocations.map(a => ({
           ...a,
           examId: a.exam_id,
@@ -20,16 +23,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'POST':
         const { id, examId, roomId, invigilator1Id, invigilator2Id, substituteId } = req.body;
-        await sql`
-          INSERT INTO allocations (id, exam_id, room_id, invigilator1_id, invigilator2_id, substitute_id)
-          VALUES (${id}, ${examId}, ${roomId}, ${invigilator1Id}, ${invigilator2Id}, ${substituteId})
-          ON CONFLICT (id) DO UPDATE SET
-            exam_id = EXCLUDED.exam_id,
-            room_id = EXCLUDED.room_id,
-            invigilator1_id = EXCLUDED.invigilator1_id,
-            invigilator2_id = EXCLUDED.invigilator2_id,
-            substitute_id = EXCLUDED.substitute_id
-        `;
+        
+        if (id) {
+          await sql`
+            INSERT INTO allocations (id, exam_id, room_id, invigilator1_id, invigilator2_id, substitute_id)
+            VALUES (${id}, ${examId}, ${roomId}, ${invigilator1Id}, ${invigilator2Id}, ${substituteId})
+            ON CONFLICT (id) DO UPDATE SET
+              exam_id = EXCLUDED.exam_id,
+              room_id = EXCLUDED.room_id,
+              invigilator1_id = EXCLUDED.invigilator1_id,
+              invigilator2_id = EXCLUDED.invigilator2_id,
+              substitute_id = EXCLUDED.substitute_id
+          `;
+        } else {
+          await sql`
+            INSERT INTO allocations (exam_id, room_id, invigilator1_id, invigilator2_id, substitute_id)
+            VALUES (${examId}, ${roomId}, ${invigilator1Id}, ${invigilator2Id}, ${substituteId})
+          `;
+        }
         return res.status(201).json({ message: 'Allocation saved' });
 
       case 'DELETE':

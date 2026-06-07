@@ -8,6 +8,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (method) {
       case 'GET':
         const { rows: exams } = await sql`SELECT * FROM exams ORDER BY date ASC, time ASC`;
+        if (!exams || !Array.isArray(exams)) {
+          return res.status(200).json([]);
+        }
         const mappedExams = exams.map(e => ({
           ...e,
           roomIds: typeof e.room_ids === 'string' ? JSON.parse(e.room_ids) : e.room_ids
@@ -15,17 +18,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(mappedExams);
 
       case 'POST':
-        const { id, name, subject, date, time, roomIds } = req.body;
-        await sql`
-          INSERT INTO exams (id, name, subject, date, time, room_ids)
-          VALUES (${id}, ${name}, ${subject}, ${date}, ${time}, ${JSON.stringify(roomIds)})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            subject = EXCLUDED.subject,
-            date = EXCLUDED.date,
-            time = EXCLUDED.time,
-            room_ids = EXCLUDED.room_ids
-        `;
+        const { id, name, variant, subject_group, year, code, date, time, shift, modality, phase, roomIds } = req.body;
+        
+        if (id) {
+          await sql`
+            INSERT INTO exams (id, name, variant, subject_group, year, code, date, time, shift, modality, phase, room_ids)
+            VALUES (${id}, ${name}, ${variant}, ${subject_group}, ${year}, ${code}, ${date}, ${time}, ${shift}, ${modality}, ${phase}, ${JSON.stringify(roomIds)})
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              variant = EXCLUDED.variant,
+              subject_group = EXCLUDED.subject_group,
+              year = EXCLUDED.year,
+              code = EXCLUDED.code,
+              date = EXCLUDED.date,
+              time = EXCLUDED.time,
+              shift = EXCLUDED.shift,
+              modality = EXCLUDED.modality,
+              phase = EXCLUDED.phase,
+              room_ids = EXCLUDED.room_ids
+          `;
+        } else {
+          await sql`
+            INSERT INTO exams (name, variant, subject_group, year, code, date, time, shift, modality, phase, room_ids)
+            VALUES (${name}, ${variant}, ${subject_group}, ${year}, ${code}, ${date}, ${time}, ${shift}, ${modality}, ${phase}, ${JSON.stringify(roomIds)})
+          `;
+        }
         return res.status(201).json({ message: 'Exam saved' });
 
       case 'DELETE':

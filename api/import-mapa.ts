@@ -47,13 +47,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 4. Process Exams
     for (const e of exams) {
       await sql`
-        INSERT INTO exams (id, name, subject, date, time)
-        VALUES (${e.id}, ${e.name}, ${e.subject}, ${e.date}, ${e.time})
+        INSERT INTO exams (id, name, variant, subject_group, year, code, date, time, shift, modality, phase)
+        VALUES (
+          ${e.id}, 
+          ${e.name}, 
+          ${e.variant || null}, 
+          ${e.subject_group || '000'}, 
+          ${e.year || '12'}, 
+          ${e.code || null}, 
+          ${e.date}, 
+          ${e.time}, 
+          ${e.shift || null}, 
+          ${e.modality || null}, 
+          ${e.phase || '1'}
+        )
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
-          subject = EXCLUDED.subject,
+          variant = EXCLUDED.variant,
+          subject_group = EXCLUDED.subject_group,
+          year = EXCLUDED.year,
+          code = EXCLUDED.code,
           date = EXCLUDED.date,
-          time = EXCLUDED.time
+          time = EXCLUDED.time,
+          shift = EXCLUDED.shift,
+          modality = EXCLUDED.modality,
+          phase = EXCLUDED.phase
       `;
     }
 

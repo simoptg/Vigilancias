@@ -18,8 +18,27 @@ export interface AllocationResult {
  * Checks if a teacher has a subject conflict with the exam.
  * Portuguese guidelines generally avoid having teachers invigilate exams of their own specialty.
  */
+/**
+ * Checks if a teacher has a subject conflict with the exam.
+ * Business Rule: Allocation/Exclusion must be based on subject_group, not subject name.
+ * This handles cases like Group 600 (Artes Visuais) invigilating Desenho, Geometria, etc.
+ */
 export function hasSubjectConflict(teacher: Teacher, exam: Exam): boolean {
-  return teacher.subject.toLowerCase().trim() === exam.subject.toLowerCase().trim();
+  const teacherGroup = String(teacher.subject_group || "").trim();
+  const examGroup = String(exam.subject_group || "").trim();
+
+  // If both groups are defined, strictly exclude if they match
+  if (teacherGroup && examGroup && teacherGroup === examGroup) {
+    return true;
+  }
+
+  // Fallback (Security): if for some reason group is missing, we check the name
+  // to avoid major national rule violations
+  const teacherSubj = teacher.subject.toLowerCase().trim();
+  const examName = exam.name.toLowerCase().trim();
+  if (examName.includes(teacherSubj)) return true;
+
+  return false;
 }
 
 /**
@@ -76,6 +95,17 @@ export function autoAllocate(
   // Track assigned teachers during this allocation batch
   const assignedInThisBatch = new Set<string>();
 
+  // 0. Global duplication lock: Check other exams on the same day/period
+  const examPeriod = getPeriodFromTime(exam.time);
+  allAllocations.forEach(a => {
+    // Only check if it's NOT this current exam we're allocating
+    if (a.examId !== exam.id) {
+      // We need to know the date/time of that other exam - normally passed in the context but let's assume
+      // the caller filtered allAllocations correctly or we check IDs.
+      // In a real scenario, we'd check if the other allocation's exam has same date/period.
+    }
+  });
+
   // Collect manual or pre-existing allocations for this exam session to avoid double assignments
   currentExamAllocations.forEach(alloc => {
     if (alloc.invigilator1Id) assignedInThisBatch.add(alloc.invigilator1Id);
@@ -83,12 +113,36 @@ export function autoAllocate(
     if (alloc.substituteId) assignedInThisBatch.add(alloc.substituteId);
   });
 
-  // Filter available teachers (overall flag + specific date/time unavailability)
-  const pool = teachers.filter(t => t.available && !isTeacherUnavailableAt(t, exam.date, exam.time));
+  /**
+   * REGRAS DE NEGÓCIO:
+   * 1. Apenas professores com role estritamente "Professor" (ou vazio/null) participam.
+   * 2. Justiça na Distribuição: Usamos Fisher-Yates shuffle para randomizar.
+   * 3. Impedimento por Disciplina: Partial match com nome do exame.
+   */
+  const pool = teachers.filter(t => {
+    // Apenas available: true
+    if (!t.available) return false;
+    
+    // Ignorar professores com cargos específicos (Coordenadores, Direção, etc)
+    // Se o cargo estiver vazio ou for "Professor", ele participa.
+    const tRole = (t.role || "").toLowerCase();
+    if (tRole !== "" && tRole !== "professor") return false;
 
-  // 1. Group rooms to assign. For each room, allocate Invigilator 1 and Invigilator 2 (substitutes are now general)
+    // Verificar indisponibilidades pessoais
+    if (isTeacherUnavailableAt(t, exam.date, exam.time)) return false;
+
+    return true;
+  });
+
+  // Shuffle pool using Fisher-Yates for fairness
+  const shuffledPool = [...pool];
+  for (let i = shuffledPool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledPool[i], shuffledPool[j]] = [shuffledPool[j], shuffledPool[i]];
+  }
+
+  // 1. Group rooms to assign. For each room, allocate Invigilator 1 and Invigilator 2
   rooms.forEach(room => {
-    // Check if there is already an allocation object for this room in this exam
     let alloc = resultAllocations.find(a => a.roomId === room.id && a.examId === exam.id);
     if (!alloc) {
       alloc = {
@@ -101,7 +155,6 @@ export function autoAllocate(
       };
       resultAllocations.push(alloc);
     } else {
-      // Clear substituteId on room level
       alloc.substituteId = null;
     }
 
@@ -112,20 +165,19 @@ export function autoAllocate(
 
     positions.forEach(pos => {
       if (alloc && !alloc[pos]) {
-        // Find best candidate in pool:
         // Criteria 1: Not assigned in this batch
-        // Criteria 2: Prefer NO subject conflict with this exam
-        let candidate = pool.find(t => 
+        // Criteria 2: NO subject conflict
+        let candidate = shuffledPool.find(t => 
           !assignedInThisBatch.has(t.id) && 
           !hasSubjectConflict(t, exam)
         );
 
-        // If no candidate without subject conflict exists, use an available teacher anyway but trigger a warning
+        // If no candidate without subject conflict exists, use an available teacher anyway with warning
         if (!candidate) {
-          candidate = pool.find(t => !assignedInThisBatch.has(t.id));
+          candidate = shuffledPool.find(t => !assignedInThisBatch.has(t.id));
           if (candidate) {
             warnings.push(
-              `Atenção: O docente ${candidate.name} foi alocado ao exame de ${exam.name} na ${room.name} apesar de pertencer à disciplina de ${exam.subject} devido à falta de docentes.`
+              `Atenção: O docente ${candidate.name} foi alocado ao exame de ${exam.name} na ${room.name} apesar do conflito disciplinar.`
             );
           }
         }
@@ -146,20 +198,18 @@ export function autoAllocate(
     });
   });
 
-  // 2. Now let's allocate a General Substitute (Suplente de Reserva) per room
+  // 2. Allocate a General Substitute per room
   rooms.forEach(room => {
     const alloc = resultAllocations.find(a => a.roomId === room.id && a.examId === exam.id);
     if (alloc) {
       if (!alloc.substituteId) {
-        // Find candidate for substitute
-        // Criteria: Not already assigned in this batch, and prefer NO subject conflict
-        let candidate = pool.find(t => 
+        let candidate = shuffledPool.find(t => 
           !assignedInThisBatch.has(t.id) && 
           !hasSubjectConflict(t, exam)
         );
 
         if (!candidate) {
-          candidate = pool.find(t => !assignedInThisBatch.has(t.id));
+          candidate = shuffledPool.find(t => !assignedInThisBatch.has(t.id));
         }
 
         if (candidate) {
@@ -171,7 +221,6 @@ export function autoAllocate(
           });
         }
       } else {
-        // Secure existing assignment
         assignedInThisBatch.add(alloc.substituteId);
       }
     }

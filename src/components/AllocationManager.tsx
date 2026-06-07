@@ -73,16 +73,16 @@ export default function AllocationManager({
   }
 
   // Get allocations for this exam
-  const examAllocations = allocations.filter(a => a.examId === currentExam.id);
+  const examAllocations = Array.isArray(allocations) ? allocations.filter(a => a.examId === currentExam.id) : [];
 
   // Filter rooms associated with this exam. If none associated, default to all rooms
-  const hasSpecificRooms = currentExam.roomIds && currentExam.roomIds.length > 0;
+  const hasSpecificRooms = Array.isArray(currentExam.roomIds) && currentExam.roomIds.length > 0;
   const filteredRooms = hasSpecificRooms 
     ? rooms.filter(room => currentExam.roomIds?.includes(room.id))
     : rooms;
 
   // Create allocation shells if not present
-  const activeRoomsAllocations = filteredRooms.map(room => {
+  const activeRoomsAllocations = Array.isArray(filteredRooms) ? filteredRooms.map(room => {
     let existing = examAllocations.find(a => a.roomId === room.id);
     if (!existing) {
       existing = {
@@ -98,10 +98,11 @@ export default function AllocationManager({
       room,
       allocation: existing
     };
-  });
+  }) : [];
 
   // Check if a teacher is busy elsewhere at the exact same day/time (excluding current exam/room)
   const isTeacherBusyElsewhere = (teacherId: string, currentAllocId: string): boolean => {
+    if (!Array.isArray(allocations)) return false;
     // Find allocations of OTHER exams on this day/period
     return allocations.some(alloc => {
       if (alloc.id === currentAllocId) return false; // same slot
@@ -341,7 +342,7 @@ export default function AllocationManager({
                         <option value="">-- {t.manualOptionSelect} --</option>
                         {optionsList(allocation.invigilator1Id, 'invigilator1Id').map((tchr) => (
                           <option key={tchr.id} value={tchr.id}>
-                            {tchr.name} ({tchr.subjectGroup} - {tchr.subject})
+                            {tchr.name} ({tchr.subject_group} - {tchr.subject})
                           </option>
                         ))}
                       </select>
@@ -395,7 +396,7 @@ export default function AllocationManager({
                         <option value="">-- {t.manualOptionSelect} --</option>
                         {optionsList(allocation.invigilator2Id, 'invigilator2Id').map((tchr) => (
                           <option key={tchr.id} value={tchr.id}>
-                            {tchr.name} ({tchr.subjectGroup} - {tchr.subject})
+                            {tchr.name} ({tchr.subject_group} - {tchr.subject})
                           </option>
                         ))}
                       </select>
@@ -508,7 +509,7 @@ export default function AllocationManager({
                       <option value="">-- {t.manualOptionSelect} --</option>
                       {getStandbyOptionsList(allocation.substituteId).map((tchr) => (
                         <option key={tchr.id} value={tchr.id}>
-                          {tchr.name} ({tchr.subjectGroup} - {tchr.subject})
+                          {tchr.name} ({tchr.subject_group} - {tchr.subject})
                         </option>
                       ))}
                     </select>
@@ -606,7 +607,7 @@ export default function AllocationManager({
                 const filtered = teachers.filter(tchr => 
                   tchr.name.toLowerCase().includes(searchLower) ||
                   tchr.subject.toLowerCase().includes(searchLower) ||
-                  tchr.subjectGroup.includes(searchLower) ||
+                  tchr.subject_group.includes(searchLower) ||
                   tchr.email.toLowerCase().includes(searchLower)
                 );
 
@@ -644,7 +645,7 @@ export default function AllocationManager({
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-xs text-slate-800">{tchr.name}</span>
                           <span className="font-mono text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                            Grupo {tchr.subjectGroup}
+                            Grupo {tchr.subject_group}
                           </span>
                           {(!tchr.available || isTeacherUnavailableAt(tchr, currentExam.date, currentExam.time)) && (
                             <span className="text-[9px] font-bold bg-neutral-200 text-neutral-600 px-1.5 py-0.5 rounded">

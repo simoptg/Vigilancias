@@ -103,7 +103,7 @@ export default function AdminDashboard({
            if (!dayMatch) return "";
            
            const day = dayMatch[1].padStart(2, '0');
-           const year = new Date().getFullYear(); // 2026 neste contexto
+           const year = 2026; // Forçado para 2026 conforme solicitado
            
            let month = "06"; // Default Junho
            if (clean.includes("janeiro")) month = "01";
@@ -119,7 +119,18 @@ export default function AdminDashboard({
            else if (clean.includes("novembro")) month = "11";
            else if (clean.includes("dezembro")) month = "12";
            
-           return `${year}-${month}-${day}`;
+           const dateStr = `${year}-${month}-${day}`;
+           
+           // Validar se a data está dentro do intervalo permitido (16 Junho a 31 Julho)
+           const dateObj = new Date(dateStr);
+           const minDate = new Date("2026-06-16");
+           const maxDate = new Date("2026-07-31");
+           
+           if (dateObj < minDate || dateObj > maxDate) {
+             return ""; // Ignorar datas fora do intervalo
+           }
+
+           return dateStr;
          };
  
          // 1. Encontrar Exames (Procurar na linha 6 e acima)
@@ -143,18 +154,26 @@ export default function AdminDashboard({
            if (examCell && typeof examCell === 'string' && examCell.includes('(')) {
              // Exemplo: "8:45 Português Língua Não Materna (839)"
              const timeMatch = examCell.match(/(\d{1,2}:\d{2})/);
-             const time = timeMatch ? timeMatch[1] : "09:00";
+             const time = timeMatch ? timeMatch[1] : "08:45";
              
              // Limpeza do nome e disciplina
              const fullName = examCell.replace(time, '').trim();
-             const subjectOnly = fullName.split('(')[0].trim();
+             const nameParts = fullName.split('(');
+             const nameOnly = nameParts[0].trim();
+             const codeMatch = nameParts[1] ? nameParts[1].match(/(\d+)/) : null;
+             const code = codeMatch ? codeMatch[1] : "";
              
              importedExams.push({
                id: `ex_${col}_${lastValidDate}`,
-               name: fullName,
-               subject: subjectOnly,
-               date: lastValidDate || "2026-06-15",
-               time: time
+               name: nameOnly,
+               variant: nameOnly.includes('LNM') ? 'LNM' : (nameOnly.includes(' - ') ? nameOnly.split(' - ')[1] : null),
+               year: fullName.includes('12') ? '12' : (fullName.includes('11') ? '11' : '9'),
+               code: code,
+               date: lastValidDate || "2026-06-16",
+               time: time,
+               shift: fullName.includes('T1') ? 'T1' : (fullName.includes('T2') ? 'T2' : null),
+               modality: null, // Difícil extrair automaticamente sem padrão claro
+               phase: '1' // Assume 1ª fase por padrão no import
              });
            }
          }
@@ -172,10 +191,10 @@ export default function AdminDashboard({
             const subject = groupParts[1] || "Geral";
             
             const teacherName = String(nameCell).trim();
-            const roleName = roleCell ? String(roleCell).trim() : "Professor";
-            const roleId = roleName.toLowerCase().replace(/\s+/g, '_');
+            const roleName = roleCell ? String(roleCell).trim() : "";
+            const roleId = roleName ? roleName.toLowerCase().replace(/\s+/g, '_') : "";
 
-            if (!roleNamesSet.has(roleId)) {
+            if (roleId && !roleNamesSet.has(roleId)) {
               importedRoles.push({ id: roleId, name: roleName });
               roleNamesSet.add(roleId);
             }
@@ -185,8 +204,10 @@ export default function AdminDashboard({
               name: teacherName,
               subject_group: subjectGroup,
               subject: subject,
-              role: roleId,
-              email: null // Email não existe no Excel
+              role: roleId || null,
+              email: null,
+              available: true,
+              unavailabilities: []
             });
           }
         }
@@ -235,7 +256,7 @@ export default function AdminDashboard({
         roomsCount: rooms.length,
         examsCount: exams.length,
         allocationsCount: allocations.length,
-        exams: exams.map(e => ({ name: e.name, date: e.date, subject: e.subject })),
+        exams: exams.map(e => ({ name: e.name, date: e.date, code: e.code })),
         conflictsCount: 0 // Will be updated if we pass actual conflicts
       };
 
@@ -258,16 +279,20 @@ export default function AdminDashboard({
   // Let's calculate coverage
   // Total roles needing invigilators: each exam needs 2 invigilators per room associated to it
   let totalRolesNeeded = 0;
-  exams.forEach(ex => {
-    const examRoomsCount = ex.roomIds && ex.roomIds.length > 0 ? ex.roomIds.length : totalRooms;
-    totalRolesNeeded += examRoomsCount * 2;
-  });
+  if (Array.isArray(exams)) {
+    exams.forEach(ex => {
+      const examRoomsCount = Array.isArray(ex.roomIds) && ex.roomIds.length > 0 ? ex.roomIds.length : totalRooms;
+      totalRolesNeeded += examRoomsCount * 2;
+    });
+  }
 
   let rolesFilledCount = 0;
-  allocations.forEach(alloc => {
-    if (alloc.invigilator1Id) rolesFilledCount++;
-    if (alloc.invigilator2Id) rolesFilledCount++;
-  });
+  if (Array.isArray(allocations)) {
+    allocations.forEach(alloc => {
+      if (alloc.invigilator1Id) rolesFilledCount++;
+      if (alloc.invigilator2Id) rolesFilledCount++;
+    });
+  }
 
   const coveragePercent = totalRolesNeeded > 0 
     ? Math.min(Math.round((rolesFilledCount / totalRolesNeeded) * 100), 100)
@@ -277,40 +302,42 @@ export default function AdminDashboard({
   const conflicts: string[] = [];
   const assignedTwiceMap = new Map<string, Array<{ examId: string; roomId: string }>>();
 
-  allocations.forEach(alloc => {
-    const examObj = exams.find(e => e.id === alloc.examId);
-    const roomObj = rooms.find(r => r.id === alloc.roomId);
-      
-    if (!examObj || !roomObj) return;
+  if (Array.isArray(allocations)) {
+    allocations.forEach(alloc => {
+      const examObj = exams.find(e => e.id === alloc.examId);
+      const roomObj = rooms.find(r => r.id === alloc.roomId);
+        
+      if (!examObj || !roomObj) return;
 
-    // Ignore rooms not associated to this exam if specific rooms are set up
-    if (examObj.roomIds && examObj.roomIds.length > 0 && !examObj.roomIds.includes(roomObj.id)) return;
+      // Ignore rooms not associated to this exam if specific rooms are set up
+      if (Array.isArray(examObj.roomIds) && examObj.roomIds.length > 0 && !examObj.roomIds.includes(roomObj.id)) return;
 
-    const checkTeacherConflict = (teacherId: string | null, label: string) => {
-      if (!teacherId) return;
-      const tchr = teachers.find(p => p.id === teacherId);
-      if (!tchr) return;
+      const checkTeacherConflict = (teacherId: string | null, label: string) => {
+        if (!teacherId) return;
+        const tchr = teachers.find(p => p.id === teacherId);
+        if (!tchr) return;
 
-      // 1. Same subject
-      if (hasSubjectConflict(tchr, examObj)) {
-        conflicts.push(
-          `${tchr.name} (${tchr.subject}) está alocado como ${label} na ${roomObj.name} para o exame de ${examObj.name}, violando o critério de compatibilidade disciplinar.`
-        );
-      }
+        // 1. Same subject
+        if (hasSubjectConflict(tchr, examObj)) {
+          conflicts.push(
+            `${tchr.name} (${tchr.subject}) está alocado como ${label} na ${roomObj.name} para o exame de ${examObj.name}, violando o critério de compatibilidade disciplinar.`
+          );
+        }
 
-      // 2. Double booking on the same date/time session
-      const period = getPeriodFromTime(examObj.time);
-      const key = `${teacherId}_${examObj.date}_${period}`;
-      if (!assignedTwiceMap.has(key)) {
-        assignedTwiceMap.set(key, []);
-      }
-      assignedTwiceMap.get(key)!.push({ examId: examObj.id, roomId: roomObj.id });
-    };
+        // 2. Double booking on the same date/time session
+        const period = getPeriodFromTime(examObj.time);
+        const key = `${teacherId}_${examObj.date}_${period}`;
+        if (!assignedTwiceMap.has(key)) {
+          assignedTwiceMap.set(key, []);
+        }
+        assignedTwiceMap.get(key)!.push({ examId: examObj.id, roomId: roomObj.id });
+      };
 
-    checkTeacherConflict(alloc.invigilator1Id, 'Vigilante 1');
-    checkTeacherConflict(alloc.invigilator2Id, 'Vigilante 2');
-    checkTeacherConflict(alloc.substituteId, 'Suplente');
-  });
+      checkTeacherConflict(alloc.invigilator1Id, 'Vigilante 1');
+      checkTeacherConflict(alloc.invigilator2Id, 'Vigilante 2');
+      checkTeacherConflict(alloc.substituteId, 'Suplente');
+    });
+  }
 
   assignedTwiceMap.forEach((places, key) => {
     if (places.length > 1) {
@@ -366,10 +393,37 @@ export default function AdminDashboard({
           </button>
           <button
             onClick={onClearAllocations}
-            className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-rose-900/10 cursor-pointer"
+            className="flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-amber-900/10 cursor-pointer"
           >
             <Trash2 className="h-3.5 w-3.5" />
             <span>{t.clearAllocations}</span>
+          </button>
+          <button
+            onClick={async () => {
+              const confirmed = window.confirm(
+                lang === 'pt' 
+                  ? 'Tem a certeza que deseja apagar TODOS os exames e professores? Esta ação não pode ser desfeita.' 
+                  : 'Are you sure you want to delete ALL exams and teachers? This action cannot be undone.'
+              );
+              if (confirmed) {
+                try {
+                  await api.import.mapaGeral({
+                    teachers: [],
+                    exams: [],
+                    roles: [],
+                    confirmReplace: true
+                  });
+                  onRefreshData();
+                  alert(lang === 'pt' ? 'Dados apagados com sucesso.' : 'Data cleared successfully.');
+                } catch (e) {
+                  alert('Erro ao apagar dados.');
+                }
+              }
+            }}
+            className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow shadow-rose-900/10 cursor-pointer"
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            <span>{lang === 'pt' ? 'Limpar Base Dados' : 'Clear Database'}</span>
           </button>
         </div>
       </div>

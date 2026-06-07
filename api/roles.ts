@@ -12,16 +12,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'POST':
         const { id, name } = req.body;
-        if (!name) return res.status(400).json({ error: 'Name is required' });
         
-        const roleId = id || name.toLowerCase().replace(/\s+/g, '_');
-        
-        await sql`
-          INSERT INTO teacher_roles (id, name)
-          VALUES (${roleId}, ${name})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name
-        `;
+        if (id) {
+          await sql`
+            INSERT INTO teacher_roles (id, name)
+            VALUES (${id}, ${name})
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name
+          `;
+        } else {
+          await sql`
+            INSERT INTO teacher_roles (name)
+            VALUES (${name})
+            ON CONFLICT (name) DO UPDATE SET
+              name = EXCLUDED.name
+          `;
+        }
         return res.status(201).json({ message: 'Role saved' });
 
       case 'DELETE':

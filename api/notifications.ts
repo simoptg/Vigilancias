@@ -18,12 +18,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'POST':
         const { id, timestamp, recipientEmail, recipientName, title, message, sentVia, read } = req.body;
-        await sql`
-          INSERT INTO notifications (id, timestamp, recipient_email, recipient_name, title, message, sent_via, read)
-          VALUES (${id}, ${timestamp}, ${recipientEmail}, ${recipientName}, ${title}, ${message}, ${sentVia}, ${read})
-          ON CONFLICT (id) DO UPDATE SET
-            read = EXCLUDED.read
-        `;
+        
+        if (id) {
+          await sql`
+            INSERT INTO notifications (id, timestamp, recipient_email, recipient_name, title, message, sent_via, read)
+            VALUES (${id}, ${timestamp}, ${recipientEmail}, ${recipientName}, ${title}, ${message}, ${sentVia}, ${read})
+            ON CONFLICT (id) DO UPDATE SET
+              read = EXCLUDED.read
+          `;
+        } else {
+          await sql`
+            INSERT INTO notifications (timestamp, recipient_email, recipient_name, title, message, sent_via, read)
+            VALUES (${timestamp}, ${recipientEmail}, ${recipientName}, ${title}, ${message}, ${sentVia}, ${read})
+          `;
+        }
         return res.status(201).json({ message: 'Notification saved' });
 
       default:

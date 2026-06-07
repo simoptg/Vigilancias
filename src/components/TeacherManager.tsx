@@ -103,44 +103,37 @@ export default function TeacherManager({
   const handleOpenEdit = (teacher: Teacher) => {
     setEditingTeacher(teacher);
     setName(teacher.name);
-    setSubjectGroup(teacher.subjectGroup);
+    setSubjectGroup(teacher.subject_group);
     setSubject(teacher.subject);
-    setRole(teacher.role);
-    setEmail(teacher.email);
-    setPhone(teacher.phone || '');
+    setRole(teacher.role || 'Professor');
+    setEmail(teacher.email || '');
+    setPhone('');
     setAvailable(teacher.available);
     setIsModalOpen(true);
   };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !subject || !email) {
-      alert('Por favor, preencha todos os campos obrigatórios.');
+    if (!name || !subject) {
+      alert('Por favor, preencha todos os campos obrigatórios (Nome e Disciplina).');
       return;
     }
 
+    const teacherData: Teacher = {
+      id: editingTeacher ? editingTeacher.id : crypto.randomUUID(),
+      name,
+      subject_group: subjectGroup,
+      subject,
+      role: role || null,
+      email: email || null,
+      available,
+      unavailabilities: editingTeacher?.unavailabilities || []
+    };
+
     if (editingTeacher) {
-      onUpdateTeacher({
-        ...editingTeacher,
-        name,
-        subjectGroup,
-        subject,
-        role,
-        email,
-        phone,
-        available
-      });
+      onUpdateTeacher(teacherData);
     } else {
-      onAddTeacher({
-        id: `t_${Date.now()}`,
-        name,
-        subjectGroup,
-        subject,
-        role,
-        email,
-        phone,
-        available
-      });
+      onAddTeacher(teacherData);
     }
     setIsModalOpen(false);
   };
@@ -196,8 +189,8 @@ export default function TeacherManager({
           const parsedSubj = String(cells[subjIdx] || 'Geral').trim();
           const parsedRole = (cells[roleIdx] !== undefined && cells[roleIdx] !== null && String(cells[roleIdx]).trim() !== '') 
             ? String(cells[roleIdx]).trim() 
-            : 'Professor';
-          const parsedEmail = String(cells[emailIdx] || `docente.${Math.floor(Math.random()*10000)}@escola.pt`).trim();
+            : '';
+          const parsedEmail = String(cells[emailIdx] || '').trim();
 
           if (!parsedName) {
             continue;
@@ -206,12 +199,12 @@ export default function TeacherManager({
           newTeachers.push({
             id: `t_xlsx_${Date.now()}_${i}`,
             name: parsedName,
-            subjectGroup: parsedGroup,
+            subject_group: parsedGroup,
             subject: parsedSubj,
             role: parsedRole,
             email: parsedEmail,
-            phone: '',
-            available: true
+            available: true,
+            unavailabilities: []
           });
         }
 
@@ -326,7 +319,7 @@ export default function TeacherManager({
     return (
       tchr.name.toLowerCase().includes(term) ||
       tchr.subject.toLowerCase().includes(term) ||
-      tchr.subjectGroup.includes(term) ||
+      tchr.subject_group.includes(term) ||
       tchr.role.toLowerCase().includes(term)
     );
   });
@@ -461,7 +454,7 @@ export default function TeacherManager({
                 filteredTeachers.map((tc) => (
                   <tr key={tc.id} className="hover:bg-slate-50/50 transition">
                     <td className="px-5 py-3 font-semibold text-slate-900">{tc.name}</td>
-                    <td className="px-5 py-3 text-center font-mono">{tc.subjectGroup}</td>
+                    <td className="px-5 py-3 text-center font-mono">{tc.subject_group}</td>
                     <td className="px-5 py-3">{tc.subject}</td>
                     <td className="px-5 py-3">
                       <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-medium">
@@ -597,11 +590,10 @@ export default function TeacherManager({
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    {t.email} *
+                    {t.email}
                   </label>
                   <input
                     type="email"
-                    required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="ex. docente@escola.pt"

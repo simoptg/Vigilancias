@@ -12,14 +12,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'POST':
         const { id, name, capacity, floor } = req.body;
-        await sql`
-          INSERT INTO rooms (id, name, capacity, floor)
-          VALUES (${id}, ${name}, ${capacity}, ${floor})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            capacity = EXCLUDED.capacity,
-            floor = EXCLUDED.floor
-        `;
+        
+        if (id) {
+          await sql`
+            INSERT INTO rooms (id, name, capacity, floor)
+            VALUES (${id}, ${name}, ${capacity}, ${floor})
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              capacity = EXCLUDED.capacity,
+              floor = EXCLUDED.floor
+          `;
+        } else {
+          await sql`
+            INSERT INTO rooms (name, capacity, floor)
+            VALUES (${name}, ${capacity}, ${floor})
+          `;
+        }
         return res.status(201).json({ message: 'Room saved' });
 
       case 'DELETE':

@@ -8,6 +8,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (method) {
       case 'GET':
         const { rows: teachers } = await sql`SELECT * FROM teachers ORDER BY name ASC`;
+        if (!teachers || !Array.isArray(teachers)) {
+          return res.status(200).json([]);
+        }
         const mappedTeachers = teachers.map(t => ({
           ...t,
           subjectGroup: t.subject_group,
@@ -17,19 +20,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       case 'POST':
         const { id, name, subjectGroup, subject, role, email, phone, available, unavailabilities } = req.body;
-        await sql`
-          INSERT INTO teachers (id, name, subject_group, subject, role, email, phone, available, unavailabilities)
-          VALUES (${id}, ${name}, ${subjectGroup}, ${subject}, ${role}, ${email}, ${phone}, ${available}, ${JSON.stringify(unavailabilities)})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            subject_group = EXCLUDED.subject_group,
-            subject = EXCLUDED.subject,
-            role = EXCLUDED.role,
-            email = EXCLUDED.email,
-            phone = EXCLUDED.phone,
-            available = EXCLUDED.available,
-            unavailabilities = EXCLUDED.unavailabilities
-        `;
+        
+        if (id) {
+          await sql`
+            INSERT INTO teachers (id, name, subject_group, subject, role, email, phone, available, unavailabilities)
+            VALUES (${id}, ${name}, ${subjectGroup}, ${subject}, ${role}, ${email}, ${phone}, ${available}, ${JSON.stringify(unavailabilities)})
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              subject_group = EXCLUDED.subject_group,
+              subject = EXCLUDED.subject,
+              role = EXCLUDED.role,
+              email = EXCLUDED.email,
+              phone = EXCLUDED.phone,
+              available = EXCLUDED.available,
+              unavailabilities = EXCLUDED.unavailabilities
+          `;
+        } else {
+          await sql`
+            INSERT INTO teachers (name, subject_group, subject, role, email, phone, available, unavailabilities)
+            VALUES (${name}, ${subjectGroup}, ${subject}, ${role}, ${email}, ${phone}, ${available}, ${JSON.stringify(unavailabilities)})
+          `;
+        }
         return res.status(201).json({ message: 'Teacher saved' });
 
       case 'DELETE':
