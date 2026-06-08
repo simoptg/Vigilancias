@@ -198,24 +198,73 @@ export default function TeacherManager({
       lang === 'pt' ? 'Grupo' : 'Group',
       lang === 'pt' ? 'Nome' : 'Name',
       lang === 'pt' ? 'Disciplina' : 'Subject',
-      lang === 'pt' ? 'Cargo' : 'Role'
+      lang === 'pt' ? 'Cargo' : 'Role',
+      lang === 'pt' ? 'Indisponibilidades' : 'Unavailabilities'
     ]];
 
     const data = sorted.map(t => [
       t.subject_group,
       t.name,
       t.subject,
-      availableRoles.find(r => r.id === t.role)?.name || t.role || '-'
+      availableRoles.find(r => r.id === t.role)?.name || t.role || '-',
+      t.unavailabilities && t.unavailabilities.length > 0 
+        ? t.unavailabilities.map(u => `${u.date === 'all' ? (lang === 'pt' ? 'Todas as datas' : 'All dates') : u.date} ${u.time === 'all' ? '' : `(${u.time === '09:00' ? (lang === 'pt' ? 'Manhã' : 'Morning') : (lang === 'pt' ? 'Tarde' : 'Afternoon')})`} ${u.year ? `Ano ${u.year}` : ''} ${u.subject_group ? `Grupo ${u.subject_group}` : ''}`).join('; ')
+        : (lang === 'pt' ? 'Nenhuma' : 'None')
     ]);
 
+    let startY = 30;
     autoTable(doc, {
       head: headers,
       body: data,
-      startY: 30,
+      startY: startY,
       theme: 'grid',
       headStyles: { fillColor: [15, 23, 42] },
       styles: { fontSize: 8 }
     });
+
+    // Get the last Y position to add summary
+    const lastTableY = (doc as any).lastAutoTable.finalY + 15;
+    if (lastTableY < 280) { // Make sure we have space on the page
+      doc.setFontSize(12);
+      doc.text(lang === 'pt' ? 'Resumo de Indisponibilidades' : 'Unavailability Summary', 15, lastTableY);
+      
+      // Collect all unavailabilities
+      const allUnavailabilities: any[] = [];
+      teachers.forEach(t => {
+        if (t.unavailabilities) {
+          t.unavailabilities.forEach(u => {
+            allUnavailabilities.push({ ...u, teacherName: t.name });
+          });
+        }
+      });
+
+      if (allUnavailabilities.length > 0) {
+        const summaryHeaders = [[
+          lang === 'pt' ? 'Professor' : 'Teacher',
+          lang === 'pt' ? 'Data' : 'Date',
+          lang === 'pt' ? 'Período' : 'Period',
+          lang === 'pt' ? 'Ano' : 'Year',
+          lang === 'pt' ? 'Grupo' : 'Group'
+        ]];
+
+        const summaryData = allUnavailabilities.map(u => [
+          u.teacherName,
+          u.date === 'all' ? (lang === 'pt' ? 'Todas as datas' : 'All dates') : u.date,
+          u.time === 'all' ? (lang === 'pt' ? 'Todo o dia' : 'All day') : (u.time === '09:00' ? (lang === 'pt' ? 'Manhã' : 'Morning') : (lang === 'pt' ? 'Tarde' : 'Afternoon')),
+          u.year || '-',
+          u.subject_group || '-'
+        ]);
+
+        autoTable(doc, {
+          head: summaryHeaders,
+          body: summaryData,
+          startY: lastTableY + 10,
+          theme: 'grid',
+          headStyles: { fillColor: [59, 130, 246] },
+          styles: { fontSize: 7 }
+        });
+      }
+    }
 
     doc.save(`lista_professores_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
@@ -321,12 +370,13 @@ export default function TeacherManager({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-550/80 border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold tracking-wider">
-                <th className="px-5 py-3">{t.teacherName}</th>
-                <th className="px-5 py-3">{t.role}</th>
-                <th className="px-5 py-3">{t.email}</th>
-                <th className="px-5 py-3 text-center">{t.available}</th>
-                <th className="px-5 py-3 text-center">EE</th>
-                <th className="px-5 py-3 text-center">Piso 0</th>
+                <th className="px-5 py-3 w-1/3">{t.teacherName}</th>
+                <th className="px-5 py-3 w-1/8">{t.role}</th>
+                <th className="px-5 py-3 w-1/6">{t.email}</th>
+                <th className="px-5 py-3 text-center w-1/12">{t.available}</th>
+                <th className="px-5 py-3 text-center w-1/16">EE</th>
+                <th className="px-5 py-3 text-center w-1/16">Piso 0</th>
+                <th className="px-5 py-3 w-1/6">{lang === 'pt' ? 'Indisponibilidades' : 'Unavailabilities'}</th>
                 <th className="px-5 py-3 text-right">{t.actions}</th>
               </tr>
             </thead>
@@ -346,7 +396,17 @@ export default function TeacherManager({
                         {availableRoles.find(r => r.id === tc.role)?.name || tc.role}
                       </span>
                     </td>
-                    <td className="px-5 py-3 font-mono text-slate-500">{tc.email}</td>
+                    <td className="px-5 py-3 font-mono text-slate-500">
+                      {tc.email ? (() => {
+                        const [local, domain] = tc.email.split('@');
+                        return (
+                          <div>
+                            <div>{local}</div>
+                            {domain && <div className="text-slate-400">@{domain}</div>}
+                          </div>
+                        );
+                      })() : '-'}
+                    </td>
                     <td className="px-5 py-3 text-center">
                       <button
                         onClick={() => onUpdateTeacher({ ...tc, available: !tc.available})}
@@ -376,6 +436,15 @@ export default function TeacherManager({
                       }`}>
                         {tc.PISO_ZERO ? (lang === 'pt' ? 'SIM' : 'YES') : (lang === 'pt' ? 'NÃO' : 'NO')}
                       </span>
+                    </td>
+                    <td className="px-5 py-3 text-[10px] text-slate-500">
+                      {tc.unavailabilities && tc.unavailabilities.length > 0 
+                        ? tc.unavailabilities.map((u, i) => (
+                          <div key={i} className="mb-1">
+                            {`${u.date === 'all' ? (lang === 'pt' ? 'Todas as datas' : 'All dates') : u.date} ${u.time === 'all' ? '' : `(${u.time === '09:00' ? (lang === 'pt' ? 'Manhã' : 'Morning') : (lang === 'pt' ? 'Tarde' : 'Afternoon')})`} ${u.year ? `Ano ${u.year}` : ''} ${u.subject_group ? `Grupo ${u.subject_group}` : ''}`}
+                          </div>
+                        ))
+                        : (lang === 'pt' ? 'Nenhuma' : 'None')}
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex justify-end space-x-2">
@@ -408,11 +477,61 @@ export default function TeacherManager({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="text-center py-10 text-slate-400">
+                  <td colSpan={8} className="text-center py-10 text-slate-400">
                     Nenhum docente encontrado de momento.
                   </td>
                 </tr>
               )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      {/* Unavailability Summary */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">{lang === 'pt' ? 'Resumo de Indisponibilidades' : 'Unavailability Summary'}</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-550/80 border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold tracking-wider">
+                <th className="px-3 py-2">{lang === 'pt' ? 'Professor' : 'Teacher'}</th>
+                <th className="px-3 py-2">{lang === 'pt' ? 'Data' : 'Date'}</th>
+                <th className="px-3 py-2">{lang === 'pt' ? 'Período' : 'Period'}</th>
+                <th className="px-3 py-2">{lang === 'pt' ? 'Ano' : 'Year'}</th>
+                <th className="px-3 py-2">{lang === 'pt' ? 'Grupo' : 'Group'}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+              {(() => {
+                const allUnavailabilities: any[] = [];
+                teachers.forEach(t => {
+                  if (t.unavailabilities) {
+                    t.unavailabilities.forEach(u => {
+                      allUnavailabilities.push({ ...u, teacherName: t.name });
+                    });
+                  }
+                });
+                
+                if (allUnavailabilities.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={5} className="text-center py-5 text-slate-400">
+                        {lang === 'pt' ? 'Nenhuma indisponibilidade registada' : 'No unavailabilities recorded'}
+                      </td>
+                    </tr>
+                  );
+                }
+                
+                return allUnavailabilities.map((u, i) => (
+                  <tr key={i} className="hover:bg-slate-50/50 transition">
+                    <td className="px-3 py-2 font-medium">{u.teacherName}</td>
+                    <td className="px-3 py-2">{u.date === 'all' ? (lang === 'pt' ? 'Todas as datas' : 'All dates') : u.date}</td>
+                    <td className="px-3 py-2">{u.time === 'all' ? (lang === 'pt' ? 'Todo o dia' : 'All day') : (u.time === '09:00' ? (lang === 'pt' ? 'Manhã' : 'Morning') : (lang === 'pt' ? 'Tarde' : 'Afternoon'))}</td>
+                    <td className="px-3 py-2">{u.year || '-'}</td>
+                    <td className="px-3 py-2">{u.subject_group || '-'}</td>
+                  </tr>
+                ));
+              })()}
             </tbody>
           </table>
         </div>

@@ -18,7 +18,8 @@ export const exportToExcel = (
     Email: t.email || '',
     Disponivel: t.available ? 'SIM' : 'NÃO',
     EE: t.EE ? 'SIM' : 'NÃO',
-    PISO_ZERO: t.PISO_ZERO ? 'SIM' : 'NÃO'
+    PISO_ZERO: t.PISO_ZERO ? 'SIM' : 'NÃO',
+    Indisponibilidades: JSON.stringify(t.unavailabilities || [])
   }));
   const wsTeachers = XLSX.utils.json_to_sheet(teachersData);
   XLSX.utils.book_append_sheet(wb, wsTeachers, "Docentes");
@@ -93,22 +94,33 @@ export const importFromExcel = async (
         const importedRooms = rawRooms.map(r => ({
         name: String(r.Nome),
         capacity: Number(r.Capacidade) || 15,
-        floor: r.Floor ? String(r.Floor) : undefined,
+        floor: r.Floor !== undefined && r.Floor !== null ? String(r.Floor) : undefined,
         priority: Number(r.priority) || 0
       }));
 
         // 3. Teachers
         const rawTeachers = getSheetData("Docentes") as any[];
-        const importedTeachers = rawTeachers.map(t => ({
-          name: String(t.Nome),
-          subject_group: String(t.Grupo_Disciplinar || '300'),
-          subject: String(t.Disciplina || 'Geral'),
-          role: String(t.Cargo || ''), // Will be mapped to ID in the API/Handler
-          email: t.Email ? String(t.Email) : null,
-          available: String(t.Disponivel).toUpperCase() === 'SIM',
-          EE: String(t.EE || 'NÃO').toUpperCase() === 'SIM',
-          PISO_ZERO: String(t.PISO_ZERO || 'NÃO').toUpperCase() === 'SIM'
-        }));
+        const importedTeachers = rawTeachers.map(t => {
+          let unavailabilities = [];
+          try {
+            if (t.Indisponibilidades) {
+              unavailabilities = JSON.parse(t.Indisponibilidades);
+            }
+          } catch (e) {
+            unavailabilities = [];
+          }
+          return {
+            name: String(t.Nome),
+            subject_group: String(t.Grupo_Disciplinar || '300'),
+            subject: String(t.Disciplina || 'Geral'),
+            role: String(t.Cargo || ''), // Will be mapped to ID in the API/Handler
+            email: t.Email ? String(t.Email) : null,
+            available: String(t.Disponivel || 'NÃO').toUpperCase() === 'SIM',
+            EE: String(t.EE || 'NÃO').toUpperCase() === 'SIM',
+            PISO_ZERO: String(t.PISO_ZERO || 'NÃO').toUpperCase() === 'SIM',
+            unavailabilities
+          };
+        });
 
         // 4. Exams
         const rawExams = getSheetData("Exames") as any[];
