@@ -46,6 +46,8 @@ export default function TeacherManager({
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [sortBy, setSortBy] = useState<'name' | 'subjectGroup' | 'subject'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // States for Unavailability Modal
   const [unavailabilityTeacher, setUnavailabilityTeacher] = useState<Teacher | null>(null);
@@ -154,8 +156,8 @@ export default function TeacherManager({
     }
   };
 
-  // Filter teachers list
-  const filteredTeachers = teachers.filter(tchr => {
+  // Filter and sort teachers list
+  const filteredTeachers = [...teachers].filter(tchr => {
     const term = searchTerm.toLowerCase();
     const roleName = availableRoles.find(r => r.id === tchr.role)?.name || tchr.role || '';
     return (
@@ -165,6 +167,16 @@ export default function TeacherManager({
       roleName.toLowerCase().includes(term) ||
       (tchr.email || '').toLowerCase().includes(term)
     );
+  }).sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === 'name') {
+      comparison = a.name.localeCompare(b.name);
+    } else if (sortBy === 'subjectGroup') {
+      comparison = (a.subject_group || '').localeCompare(b.subject_group || '');
+    } else if (sortBy === 'subject') {
+      comparison = (a.subject || '').localeCompare(b.subject || '');
+    }
+    return sortOrder === 'asc' ? comparison : -comparison;
   });
 
   const handleExportPDF = () => {
@@ -250,15 +262,66 @@ export default function TeacherManager({
         )}
       </div>
 
-      {/* Teachers list and directory table */}
+      {/* Sort options */}
+      <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+        <span className="text-xs font-semibold text-slate-700">{lang === 'pt' ? 'Ordenar por:' : 'Sort by:'}</span>
+        <button
+          onClick={() => {
+            if (sortBy === 'name') {
+              setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            } else {
+                setSortBy('name');
+                setSortOrder('asc');
+            }
+          }}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer ${
+            sortBy === 'name' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          {t.teacherName}
+          {sortBy === 'name' && (sortOrder === 'asc' ? ' ↓' : ' ↑')}
+        </button>
+        <button
+          onClick={() => {
+            if (sortBy === 'subjectGroup') {
+              setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortBy('subjectGroup');
+              setSortOrder('asc');
+            }
+          }}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer ${
+            sortBy === 'subjectGroup' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          {t.subjectGroup}
+          {sortBy === 'subjectGroup' && (sortOrder === 'asc' ? ' ↓' : ' ↑')}
+        </button>
+        <button
+          onClick={() => {
+            if (sortBy === 'subject') {
+              setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortBy('subject');
+              setSortOrder('asc');
+            }
+          }}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer ${
+            sortBy === 'subject' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          {t.subject}
+          {sortBy === 'subject' && (sortOrder === 'asc' ? ' ↓' : ' ↑')}
+        </button>
+      </div>
+
+      {/* Teachers list */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-550/80 border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold tracking-wider">
                 <th className="px-5 py-3">{t.teacherName}</th>
-                <th className="px-5 py-3 text-center">{t.subjectGroup}</th>
-                <th className="px-5 py-3">{t.subject}</th>
                 <th className="px-5 py-3">{t.role}</th>
                 <th className="px-5 py-3">{t.email}</th>
                 <th className="px-5 py-3 text-center">{t.available}</th>
@@ -271,9 +334,13 @@ export default function TeacherManager({
               {filteredTeachers.length > 0 ? (
                 filteredTeachers.map((tc) => (
                   <tr key={tc.id} className="hover:bg-slate-50/50 transition">
-                    <td className="px-5 py-3 font-semibold text-slate-900">{tc.name}</td>
-                    <td className="px-5 py-3 text-center font-mono">{tc.subject_group}</td>
-                    <td className="px-5 py-3">{tc.subject}</td>
+                    <td className="px-5 py-3">
+                      <div className="font-semibold text-slate-900">{tc.name}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        <span className="font-mono mr-3">{tc.subject_group}</span>
+                        <span>{tc.subject}</span>
+                      </div>
+                    </td>
                     <td className="px-5 py-3">
                       <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-medium">
                         {availableRoles.find(r => r.id === tc.role)?.name || tc.role}
@@ -282,7 +349,7 @@ export default function TeacherManager({
                     <td className="px-5 py-3 font-mono text-slate-500">{tc.email}</td>
                     <td className="px-5 py-3 text-center">
                       <button
-                        onClick={() => onUpdateTeacher({ ...tc, available: !tc.available })}
+                        onClick={() => onUpdateTeacher({ ...tc, available: !tc.available})}
                         className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer ${
                           tc.available 
                             ? 'bg-blue-55 text-blue-700 border border-blue-200' 
@@ -341,7 +408,7 @@ export default function TeacherManager({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-slate-400">
+                  <td colSpan={7} className="text-center py-10 text-slate-400">
                     Nenhum docente encontrado de momento.
                   </td>
                 </tr>
