@@ -390,56 +390,56 @@ export default function AllocationManager({
                   };
 
                   return (
-                    <div key={room.id} className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 hover:border-blue-200 transition">
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        <div className="lg:col-span-3 border-r border-slate-100 pr-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="bg-slate-100 p-1.5 rounded-lg"><Home className="h-4 w-4 text-slate-600" /></div>
-                            <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">{room.name}</h3>
-                          </div>
-                          <div className="text-[10px] text-slate-500 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
+                    <div key={room.id} className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden hover:border-blue-200 transition">
+                      {/* Room Header */}
+                      <div className="bg-slate-50 p-4 border-b border-slate-200">
+                        <div className="flex items-center gap-2">
+                          <div className="bg-slate-200 p-1.5 rounded-lg"><Home className="h-4 w-4 text-slate-700" /></div>
+                          <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">{room.name}</h3>
+                          <div className="ml-auto text-[10px] text-slate-600 bg-white px-2 py-1 rounded-full border border-slate-300">
                             <span className="font-bold uppercase tracking-wider">{t.capacity}: {room.capacity}</span>
                           </div>
                         </div>
+                      </div>
 
-                        <div className="lg:col-span-9 space-y-4">
-                          {[
-                            { key: 'invigilator1Id', label: t.invigilator1, val: val1 },
-                            { key: 'invigilator2Id', label: t.invigilator2, val: val2 },
-                            { key: 'substituteId', label: t.substitute, val: val3, isSub: true }
-                          ].map(role => (
-                            <div key={role.key} className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <label className={`text-[9px] font-black uppercase tracking-widest ${role.isSub ? 'text-blue-400' : 'text-slate-400'}`}>
-                                  {role.label}
-                                </label>
-                                <div className="flex items-center gap-1 text-[9px] font-bold">
-                                  {role.val.state === 'valid' && <CheckCircle className="h-2.5 w-2.5 text-blue-600" />}
-                                  {role.val.state === 'critical' && <ShieldAlert className="h-2.5 w-2.5 text-rose-500" />}
-                                  {role.val.state === 'conflict_subject' && <AlertTriangle className="h-2.5 w-2.5 text-amber-500" />}
-                                  <span className={role.val.color}>{role.val.label}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={(allocation as any)[role.key] || ''}
-                                  onChange={(e) => handleSelectTeacher(allocation, room.id, role.key as any, e.target.value)}
-                                  className={`flex-1 ${role.isSub ? 'bg-blue-50/50 border-blue-200 text-blue-900' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition`}
-                                >
-                                  <option value="">-- {t.manualOptionSelect} --</option>
-                                  {optionsList((allocation as any)[role.key], role.key).map(tchr => (
-                                    <option key={tchr.id} value={tchr.id}>{tchr.name} ({tchr.subject_group} - {tchr.subject})</option>
-                                  ))}
-                                </select>
-                                {(allocation as any)[role.key] && (
-                                  <button onClick={() => handleSelectTeacher(allocation, room.id, role.key as any, '')} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl transition cursor-pointer">
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                )}
+                      {/* Vigilantes & Suplente */}
+                      <div className="p-6 space-y-4">
+                        {[
+                          { key: 'invigilator1Id', label: t.invigilator1, val: val1 },
+                          { key: 'invigilator2Id', label: t.invigilator2, val: val2 },
+                          { key: 'substituteId', label: t.substitute, val: val3, isSub: true }
+                        ].map(role => (
+                          <div key={role.key} className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className={`text-[9px] font-black uppercase tracking-widest ${role.isSub ? 'text-blue-500' : 'text-slate-500'}`}>
+                                {role.label}
+                              </label>
+                              <div className="flex items-center gap-1 text-[9px] font-bold">
+                                {role.val.state === 'valid' && <CheckCircle className="h-2.5 w-2.5 text-blue-600" />}
+                                {role.val.state === 'critical' && <ShieldAlert className="h-2.5 w-2.5 text-rose-500" />}
+                                {role.val.state === 'conflict_subject' && <AlertTriangle className="h-2.5 w-2.5 text-amber-500" />}
+                                <span className={role.val.color}>{role.val.label}</span>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={(allocation as any)[role.key] || ''}
+                                onChange={(e) => handleSelectTeacher(allocation, room.id, role.key as any, e.target.value)}
+                                className={`flex-1 ${role.isSub ? 'bg-blue-50/50 border-blue-200 text-blue-900' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl px-3 py-2.5 text-xs font-bold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition`}
+                              >
+                                <option value="">-- {t.manualOptionSelect} --</option>
+                                {optionsList((allocation as any)[role.key], role.key).map(tchr => (
+                                  <option key={tchr.id} value={tchr.id}>{tchr.name} ({tchr.subject_group} - {tchr.subject})</option>
+                                ))}
+                              </select>
+                              {(allocation as any)[role.key] && (
+                                <button onClick={() => handleSelectTeacher(allocation, room.id, role.key as any, '')} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl transition cursor-pointer">
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
