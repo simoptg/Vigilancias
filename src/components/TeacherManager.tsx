@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Teacher, Language, Exam } from '../types';
+import { Teacher, Language, Exam, TeacherRole } from '../types';
 import { translations } from '../translations';
 import { api } from '../utils/api';
 import { 
@@ -25,6 +25,7 @@ interface TeacherManagerProps {
   lang: Language;
   teachers: Teacher[];
   exams: Exam[];
+  availableRoles: TeacherRole[];
   onAddTeacher: (teacher: Teacher) => void;
   onUpdateTeacher: (teacher: Teacher) => void;
   onDeleteTeacher: (id: string) => void;
@@ -35,10 +36,11 @@ export default function TeacherManager({
   lang,
   teachers,
   exams,
+  availableRoles,
   onAddTeacher,
   onUpdateTeacher,
   onDeleteTeacher,
-  onClearAllTeachers
+  onClearAllTeachers,
 }: TeacherManagerProps) {
   const t = translations[lang];
 
@@ -65,21 +67,6 @@ export default function TeacherManager({
   const [available, setAvailable] = useState(true);
   const [EE, setEE] = useState(false);
   const [PISO_ZERO, setPISO_ZERO] = useState(false);
-
-  // Roles state for dropdown
-  const [availableRoles, setAvailableRoles] = useState<{id: string, name: string}[]>([]);
-
-  useEffect(() => {
-    const fetchRoles = async () => {
-      try {
-        const rolesData = await api.roles.getAll();
-        setAvailableRoles(rolesData);
-      } catch (err) {
-        console.error('Error loading roles for dropdown:', err);
-      }
-    };
-    fetchRoles();
-  }, [isModalOpen]);
 
   // New Confirm Clear states
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
@@ -210,11 +197,17 @@ export default function TeacherManager({
       lang === 'pt' ? 'Indisponibilidades' : 'Unavailabilities'
     ]];
 
+    const getRoleName = (roleId: string | null | undefined) => {
+      if (!roleId) return '-';
+      const role = availableRoles.find(r => r.id === roleId);
+      return role ? role.name : roleId;
+    };
+
     const data = sorted.map(t => [
       t.subject_group,
       t.name,
       t.subject,
-      availableRoles.find(r => r.id === t.role)?.name || t.role || '-',
+      getRoleName(t.role),
       t.unavailabilities && t.unavailabilities.length > 0 
         ? t.unavailabilities.map(u => {
             let parts: string[] = [];

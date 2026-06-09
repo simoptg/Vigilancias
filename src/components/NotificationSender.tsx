@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Language, Teacher, Exam, Room, Allocation } from '../types';
+import { Language, Teacher, Exam, Room, Allocation, TeacherRole } from '../types';
 import { Mail, Send, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { api } from '../utils/api';
 
@@ -14,6 +14,7 @@ interface NotificationSenderProps {
   exams: Exam[];
   rooms: Room[];
   allocations: Allocation[];
+  availableRoles: TeacherRole[];
 }
 
 export default function NotificationSender({
@@ -21,12 +22,20 @@ export default function NotificationSender({
   teachers,
   exams,
   rooms,
-  allocations
+  allocations,
+  availableRoles
 }: NotificationSenderProps) {
   const [isSending, setIsSending] = useState(false);
   const [sentCount, setSentCount] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
   const [lastError, setLastError] = useState('');
+
+  // Helper function to get role name
+  const getRoleName = (roleId: string | null | undefined) => {
+    if (!roleId) return '';
+    const role = availableRoles.find(r => r.id === roleId);
+    return role ? role.name : roleId;
+  };
 
   const teacherAllocations = teachers.map(teacher => {
     const myAllocations = allocations.filter(a =>
@@ -37,15 +46,18 @@ export default function NotificationSender({
 
     return {
       teacher,
+      teacherRole: getRoleName(teacher.role),
       allocations: myAllocations.map(a => {
         const exam = exams.find(e => e.id === a.examId);
         const room = rooms.find(r => r.id === a.roomId);
         let role = '';
+        const isSubstitute = a.substituteId === teacher.id;
+        
         if (a.invigilator1Id === teacher.id) role = lang === 'pt' ? 'Vigilante 1' : 'Invigilator 1';
         else if (a.invigilator2Id === teacher.id) role = lang === 'pt' ? 'Vigilante 2' : 'Invigilator 2';
-        else if (a.substituteId === teacher.id) role = lang === 'pt' ? 'Suplente' : 'Substitute';
+        else if (isSubstitute) role = lang === 'pt' ? 'Suplente' : 'Substitute';
 
-        return { exam, room, role };
+        return { exam, room, role, isSubstitute };
       }).filter(item => item.exam && item.room)
     };
   }).filter(item => item.allocations.length > 0);
@@ -68,13 +80,22 @@ export default function NotificationSender({
         teacherId: teacher.id,
         teacherName: teacher.name,
         teacherEmail: teacher.email || '',
-        allocations: allocs.map(alloc => ({
-          examName: alloc.exam!.name,
-          examDate: alloc.exam!.date,
-          examTime: alloc.exam!.time,
-          roomName: alloc.room!.name,
-          role: alloc.role
-        }))
+        allocations: allocs.map(alloc => {
+          if (alloc.isSubstitute) {
+            return {
+              examDate: alloc.exam!.date,
+              examTime: alloc.exam!.time,
+              role: alloc.role
+            };
+          }
+          return {
+            examName: alloc.exam!.name,
+            examDate: alloc.exam!.date,
+            examTime: alloc.exam!.time,
+            roomName: alloc.room!.name,
+            role: alloc.role
+          };
+        })
       }));
 
       const result = await api.sendNotifications(payload);
@@ -165,11 +186,11 @@ export default function NotificationSender({
 
         <div className="divide-y divide-slate-100">
           {teacherAllocations.length > 0 ? (
-            teacherAllocations.map(({ teacher, allocations }) => (
+            teacherAllocations.map(({ teacher, teacherRole, allocations }) => (
               <div key={teacher.id} className="p-5 hover:bg-slate-50/50 transition">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <h4 className="font-bold text-slate-900 text-sm">{teacher.name}</h4>
+                    <h4 className="font-bold text-slate-900 text-sm">{teacher.name} {teacherRole ? `(${teacherRole})` : ''}</h4>
                     <p className={`text-xs ${teacher.email ? 'text-slate-500' : 'text-red-500 font-semibold'}`}>
                       {teacher.email || (lang === 'pt' ? 'Sem email registado' : 'No email registered')}
                     </p>
@@ -177,8 +198,17 @@ export default function NotificationSender({
                   <div className="flex flex-wrap gap-2">
                     {allocations.map((alloc, idx) => (
                       <div key={idx} className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] shadow-sm">
-                        <span className="font-bold text-blue-700 block mb-0.5">{alloc.exam?.name}</span>
-                        <span className="text-slate-600">{alloc.room?.name} • {alloc.role}</span>
+                        {alloc.isSubstitute ? (
+                          <>
+                            <span className="font-bold text-orange-700 block mb-0.5">{alloc.role}</span>
+                            <span className="text-slate-600">{lang === 'pt' ? `Dia: ${alloc.exam?.date} | Hora: ${alloc.exam?.time}` : `Date: ${alloc.exam?.date} | Time: ${alloc.exam?.time}`}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-blue-700 block mb-0.5">{alloc.exam?.name}</span>
+                            <span className="text-slate-600">{alloc.room?.name} • {alloc.role}</span>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>

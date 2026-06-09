@@ -34,15 +34,27 @@ function mapEmailConfigRow(row: Record<string, unknown>) {
 }
 
 function buildEmailHtml(schoolName: string, teacherName: string, allocations: AllocationItem[]): string {
-  const rows = allocations.map(a => `
-    <tr>
-      <td style="padding:8px;border:1px solid #e2e8f0;">${a.examName}</td>
-      <td style="padding:8px;border:1px solid #e2e8f0;">${a.examDate}</td>
-      <td style="padding:8px;border:1px solid #e2e8f0;">${a.examTime}</td>
-      <td style="padding:8px;border:1px solid #e2e8f0;">${a.roomName}</td>
-      <td style="padding:8px;border:1px solid #e2e8f0;">${a.role}</td>
-    </tr>
-  `).join('');
+  const rows = allocations.map(a => {
+    if (!a.examName) { // Substitute case
+      return `
+        <tr>
+          <td style="padding:8px;border:1px solid #e2e8f0;" colspan="3">${a.examDate} | ${a.examTime}</td>
+          <td style="padding:8px;border:1px solid #e2e8f0;">-</td>
+          <td style="padding:8px;border:1px solid #e2e8f0;">${a.role}</td>
+        </tr>
+      `;
+    } else {
+      return `
+        <tr>
+          <td style="padding:8px;border:1px solid #e2e8f0;">${a.examName}</td>
+          <td style="padding:8px;border:1px solid #e2e8f0;">${a.examDate}</td>
+          <td style="padding:8px;border:1px solid #e2e8f0;">${a.examTime}</td>
+          <td style="padding:8px;border:1px solid #e2e8f0;">${a.roomName}</td>
+          <td style="padding:8px;border:1px solid #e2e8f0;">${a.role}</td>
+        </tr>
+      `;
+    }
+  }).join('');
 
   return `
     <div style="font-family:Arial,sans-serif;color:#1e293b;max-width:640px;">
@@ -67,9 +79,13 @@ function buildEmailHtml(schoolName: string, teacherName: string, allocations: Al
 }
 
 function buildPlainText(schoolName: string, teacherName: string, allocations: AllocationItem[]): string {
-  const lines = allocations.map(a =>
-    `- ${a.examName} | ${a.examDate} ${a.examTime} | ${a.roomName} | ${a.role}`
-  ).join('\n');
+  const lines = allocations.map(a => {
+    if (!a.examName) {
+      return `- ${a.examDate} ${a.examTime} | ${a.role}`;
+    } else {
+      return `- ${a.examName} | ${a.examDate} ${a.examTime} | ${a.roomName} | ${a.role}`;
+    }
+  }).join('\n');
 
   return `${schoolName}\n\nExmo(a). Sr(a). Prof(a). ${teacherName},\n\nInformamos que foi atribuída a seguinte vigilância de exame:\n\n${lines}\n\nEsta mensagem foi enviada automaticamente pelo sistema de gestão de vigilâncias.`;
 }

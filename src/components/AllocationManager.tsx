@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Exam, Room, Teacher, Allocation, Language } from '../types';
+import { Teacher, Room, Exam, Allocation, Language, TeacherRole } from '../types';
 import { translations } from '../translations';
 import { 
   Sparkles, 
@@ -29,9 +29,10 @@ interface AllocationManagerProps {
   rooms: Room[];
   exams: Exam[];
   allocations: Allocation[];
+  availableRoles: TeacherRole[];
+  onUpdateAllocation: (allocation: Allocation) => void;
   onAutoTriggerForExam: (examId: string) => void;
   onClearAllocationsForExam: (examId: string) => void;
-  onUpdateAllocation: (allocation: Allocation) => void;
 }
 
 export default function AllocationManager({
@@ -40,9 +41,10 @@ export default function AllocationManager({
   rooms,
   exams,
   allocations,
+  availableRoles,
+  onUpdateAllocation,
   onAutoTriggerForExam,
   onClearAllocationsForExam,
-  onUpdateAllocation
 }: AllocationManagerProps) {
   const t = translations[lang];
 

@@ -12,7 +12,8 @@ import {
   Exam, 
   Allocation, 
   Language, 
-  UserSession 
+  UserSession, 
+  TeacherRole 
 } from './types';
 import { translations } from './translations';
 import { autoAllocate, autoAllocateAll, autoAllocateRooms } from './utils/scheduler';
@@ -89,6 +90,7 @@ export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<TeacherRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [operationState, setOperationState] = useState<OperationState>({
     open: false,
@@ -126,11 +128,12 @@ export default function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [tData, rData, eData, aData] = await Promise.all([
+        const [tData, rData, eData, aData, rolesData] = await Promise.all([
           api.teachers.getAll(),
           api.rooms.getAll(),
           api.exams.getAll(),
-          api.allocations.getAll()
+          api.allocations.getAll(),
+          api.roles.getAll()
         ]);
         
         // Ensure data is array before setting state
@@ -138,6 +141,7 @@ export default function App() {
         setRooms(Array.isArray(rData) ? sortRooms(rData) : []);
         setExams(Array.isArray(eData) ? eData : []);
         setAllocations(Array.isArray(aData) ? aData : []);
+        setAvailableRoles(Array.isArray(rolesData) ? rolesData : []);
       } catch (error) {
         console.error('Error fetching data:', error);
         // Reset to empty arrays on error to avoid .forEach errors
@@ -145,6 +149,7 @@ export default function App() {
         setRooms([]);
         setExams([]);
         setAllocations([]);
+        setAvailableRoles([]);
       } finally {
         setIsLoading(false);
       }
@@ -343,16 +348,18 @@ export default function App() {
   const handleRefreshData = async () => {
     setIsLoading(true);
     try {
-      const [tData, rData, eData, aData] = await Promise.all([
+      const [tData, rData, eData, aData, rolesData] = await Promise.all([
         api.teachers.getAll(),
         api.rooms.getAll(),
         api.exams.getAll(),
-        api.allocations.getAll()
+        api.allocations.getAll(),
+        api.roles.getAll()
       ]);
       setTeachers(Array.isArray(tData) ? tData : []);
       setRooms(Array.isArray(rData) ? sortRooms(rData) : []);
       setExams(Array.isArray(eData) ? eData : []);
       setAllocations(Array.isArray(aData) ? aData : []);
+      setAvailableRoles(Array.isArray(rolesData) ? rolesData : []);
     } catch (err) {
       console.error('Error refreshing data:', err);
       // Ensure we don't break the UI with non-array data
@@ -360,6 +367,7 @@ export default function App() {
       setRooms([]);
       setExams([]);
       setAllocations([]);
+      setAvailableRoles([]);
     } finally {
       setIsLoading(false);
     }
@@ -837,6 +845,7 @@ export default function App() {
                   lang={lang} 
                   teachers={teachers} 
                   exams={exams}
+                  availableRoles={availableRoles}
                   onAddTeacher={handleAddTeacher}
                   onUpdateTeacher={handleUpdateTeacher}
                   onDeleteTeacher={handleDeleteTeacher}
@@ -881,6 +890,7 @@ export default function App() {
                   rooms={rooms} 
                   exams={exams} 
                   allocations={allocations}
+                  availableRoles={availableRoles}
                   onUpdateAllocation={handleUpdateAllocation}
                   onAutoTriggerForExam={handleAutoTriggerForExam}
                   onClearAllocationsForExam={handleClearAllocationsForExam}
@@ -892,7 +902,8 @@ export default function App() {
                   teachers={teachers} 
                   rooms={rooms} 
                   exams={exams} 
-                  allocations={allocations} 
+                  allocations={allocations}
+                  availableRoles={availableRoles}
                 />
               )}
               {activeTab === 'notifications' && (
@@ -901,7 +912,8 @@ export default function App() {
                   teachers={teachers} 
                   exams={exams} 
                   rooms={rooms} 
-                  allocations={allocations} 
+                  allocations={allocations}
+                  availableRoles={availableRoles}
                 />
               )}
               {activeTab === 'emailConfig' && session.role === 'admin' && (
