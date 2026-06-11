@@ -11,12 +11,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!exams || !Array.isArray(exams)) {
           return res.status(200).json([]);
         }
-        const mappedExams = exams.map(e => ({
-          ...e,
-          registrationsCount: e.registrations_count ?? e.registrationsCount ?? 0,
-          EE: Boolean(e.ee ?? e.EE ?? false),
-          roomIds: typeof e.room_ids === 'string' ? JSON.parse(e.room_ids) : (e.room_ids ?? e.roomIds ?? [])
-        }));
+        const mappedExams = exams.map(e => {
+          const modality = String(e.modality ?? '').trim().toUpperCase();
+          const eeFlag = Boolean(e.ee ?? e.EE ?? false);
+          return {
+            ...e,
+            registrationsCount: e.registrations_count ?? e.registrationsCount ?? 0,
+            EE: eeFlag || modality === 'EE',
+            roomIds: typeof e.room_ids === 'string' ? JSON.parse(e.room_ids) : (e.room_ids ?? e.roomIds ?? [])
+          };
+        });
         return res.status(200).json(mappedExams);
 
       case 'POST':

@@ -30,6 +30,7 @@ import {
   getPeriodFromTime,
   hasNoSpecialRole,
   hasSubjectConflict,
+  isEeExam,
   isFloorZero,
   isTeacherUnavailableAt
 } from '../utils/scheduler';
@@ -266,7 +267,7 @@ export default function AdminDashboard({
         addTeacherSlotCheck(alloc.substituteId, 'Suplente', examObj, roomObj);
       });
 
-      if (examObj.EE) {
+      if (isEeExam(examObj)) {
         examRooms.forEach(roomObj => {
           const eeAlloc = findAllocationForExamRoom(allocations, examObj.id, roomObj.id, rooms);
           if (!eeAlloc) return;

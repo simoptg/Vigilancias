@@ -143,20 +143,25 @@ export const importFromExcel = async (
 
         // 4. Exams
         const rawExams = sheetsPresent.Exames ? (getSheetData("Exames") as any[]) : [];
-        const importedExams = rawExams.map(e => ({
-          name: String(e.Nome),
-          variant: e.Variante ? String(e.Variante) : null,
-          subject_group: String(e.Grupo_Disciplinar || '300'),
-          year: String(e.Ano || '12'),
-          code: e.Codigo ? String(e.Codigo) : null,
-          date: String(e.Data),
-          time: String(e.Hora),
-          shift: e.Turno ? String(e.Turno) : null,
-          modality: e.Modalidade ? String(e.Modalidade) : null,
-          phase: String(e.Fase || '1'),
-          registrationsCount: Number(e.N_Inscritos || 0),
-          EE: String(e.EE || 'NÃO').toUpperCase() === 'SIM'
-        }));
+        const importedExams = rawExams.map(e => {
+          const modality = e.Modalidade ? String(e.Modalidade) : null;
+          const eeFromColumn = String(e.EE || 'NÃO').toUpperCase() === 'SIM';
+          const eeFromModality = String(modality || '').trim().toUpperCase() === 'EE';
+          return {
+            name: String(e.Nome),
+            variant: e.Variante ? String(e.Variante) : null,
+            subject_group: String(e.Grupo_Disciplinar || '300'),
+            year: String(e.Ano || '12'),
+            code: e.Codigo ? String(e.Codigo) : null,
+            date: String(e.Data),
+            time: String(e.Hora),
+            shift: e.Turno ? String(e.Turno) : null,
+            modality,
+            phase: String(e.Fase || '1'),
+            registrationsCount: Number(e.N_Inscritos || 0),
+            EE: eeFromColumn || eeFromModality
+          };
+        });
 
         resolve({
           teachers: importedTeachers,
