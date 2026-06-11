@@ -83,8 +83,10 @@ export default function NotificationSender({
         allocations: allocs.map(alloc => {
           if (alloc.isSubstitute) {
             return {
+              examName: '',
               examDate: alloc.exam!.date,
               examTime: alloc.exam!.time,
+              roomName: '',
               role: alloc.role
             };
           }

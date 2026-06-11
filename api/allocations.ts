@@ -1,6 +1,14 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from './utils/db.js';
 
+function normalizeTeacherId(value: unknown): string | null {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
+  if (lower === 'null' || lower === 'undefined') return null;
+  return normalized;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { method } = req;
 
@@ -15,19 +23,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           id: a.id,
           examId: a.exam_id ?? a.examId,
           roomId: a.room_id ?? a.roomId,
-          invigilator1Id: a.invigilator1_id ?? a.invigilator1Id ?? null,
-          invigilator2Id: a.invigilator2_id ?? a.invigilator2Id ?? null,
-          substituteId: a.substitute_id ?? a.substituteId ?? null
+          invigilator1Id: normalizeTeacherId(a.invigilator1_id ?? a.invigilator1Id),
+          invigilator2Id: normalizeTeacherId(a.invigilator2_id ?? a.invigilator2Id),
+          substituteId: normalizeTeacherId(a.substitute_id ?? a.substituteId)
         }));
         return res.status(200).json(mappedAllocations);
 
       case 'POST':
         const { id, examId, roomId, invigilator1Id, invigilator2Id, substituteId } = req.body;
+        const normalizedInvigilator1Id = normalizeTeacherId(invigilator1Id);
+        const normalizedInvigilator2Id = normalizeTeacherId(invigilator2Id);
+        const normalizedSubstituteId = normalizeTeacherId(substituteId);
         
         if (id) {
           await sql`
             INSERT INTO allocations (id, exam_id, room_id, invigilator1_id, invigilator2_id, substitute_id)
-            VALUES (${id}, ${examId}, ${roomId}, ${invigilator1Id}, ${invigilator2Id}, ${substituteId})
+            VALUES (${id}, ${examId}, ${roomId}, ${normalizedInvigilator1Id}, ${normalizedInvigilator2Id}, ${normalizedSubstituteId})
             ON CONFLICT (id) DO UPDATE SET
               exam_id = EXCLUDED.exam_id,
               room_id = EXCLUDED.room_id,
@@ -38,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } else {
           await sql`
             INSERT INTO allocations (exam_id, room_id, invigilator1_id, invigilator2_id, substitute_id)
-            VALUES (${examId}, ${roomId}, ${invigilator1Id}, ${invigilator2Id}, ${substituteId})
+            VALUES (${examId}, ${roomId}, ${normalizedInvigilator1Id}, ${normalizedInvigilator2Id}, ${normalizedSubstituteId})
           `;
         }
         return res.status(201).json({ message: 'Allocation saved' });

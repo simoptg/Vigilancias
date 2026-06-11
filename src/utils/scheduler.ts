@@ -152,6 +152,14 @@ function allocationKey(examId: string, roomId: string): string {
   return `${examId}::${roomId}`;
 }
 
+function normalizeAssignedTeacherId(teacherId: string | null | undefined): string | null {
+  const normalized = String(teacherId ?? "").trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
+  if (lower === "null" || lower === "undefined") return null;
+  return normalized;
+}
+
 function getAssignmentCount(assignmentCounts: Map<string, number>, teacherId: string): number {
   return assignmentCounts.get(teacherId) || 0;
 }
@@ -936,17 +944,20 @@ export function autoAllocateAll(
     const ex = examById.get(alloc.examId);
     if (!ex) return;
     const period = getPeriodFromTime(ex.time);
-    if (alloc.invigilator1Id) {
-      dayBusy.add(`${alloc.invigilator1Id}@@${ex.date}@@${period}`);
-      assignmentCounts.set(alloc.invigilator1Id, (assignmentCounts.get(alloc.invigilator1Id) || 0) + 1);
+    const invigilator1Id = normalizeAssignedTeacherId(alloc.invigilator1Id);
+    const invigilator2Id = normalizeAssignedTeacherId(alloc.invigilator2Id);
+    const substituteId = normalizeAssignedTeacherId(alloc.substituteId);
+    if (invigilator1Id) {
+      dayBusy.add(`${invigilator1Id}@@${ex.date}@@${period}`);
+      assignmentCounts.set(invigilator1Id, (assignmentCounts.get(invigilator1Id) || 0) + 1);
     }
-    if (alloc.invigilator2Id) {
-      dayBusy.add(`${alloc.invigilator2Id}@@${ex.date}@@${period}`);
-      assignmentCounts.set(alloc.invigilator2Id, (assignmentCounts.get(alloc.invigilator2Id) || 0) + 1);
+    if (invigilator2Id) {
+      dayBusy.add(`${invigilator2Id}@@${ex.date}@@${period}`);
+      assignmentCounts.set(invigilator2Id, (assignmentCounts.get(invigilator2Id) || 0) + 1);
     }
-    if (alloc.substituteId) {
-      dayBusy.add(`${alloc.substituteId}@@${ex.date}@@${period}`);
-      assignmentCounts.set(alloc.substituteId, (assignmentCounts.get(alloc.substituteId) || 0) + 1);
+    if (substituteId) {
+      dayBusy.add(`${substituteId}@@${ex.date}@@${period}`);
+      assignmentCounts.set(substituteId, (assignmentCounts.get(substituteId) || 0) + 1);
     }
   });
 
@@ -966,9 +977,9 @@ export function autoAllocateAll(
       id: `${pair.exam.id}_${pair.room.id}`,
       examId: pair.exam.id,
       roomId: pair.room.id,
-      invigilator1Id: existingAlloc?.invigilator1Id || null,
-      invigilator2Id: existingAlloc?.invigilator2Id || null,
-      substituteId: existingAlloc?.substituteId || null
+      invigilator1Id: normalizeAssignedTeacherId(existingAlloc?.invigilator1Id),
+      invigilator2Id: normalizeAssignedTeacherId(existingAlloc?.invigilator2Id),
+      substituteId: normalizeAssignedTeacherId(existingAlloc?.substituteId)
     });
   }
 
@@ -1114,21 +1125,27 @@ export function autoAllocate(
     const ex = examById.get(alloc.examId);
     if (!ex) return;
     const period = getPeriodFromTime(ex.time);
-    if (alloc.invigilator1Id) dayBusy.add(`${alloc.invigilator1Id}@@${ex.date}@@${period}`);
-    if (alloc.invigilator2Id) dayBusy.add(`${alloc.invigilator2Id}@@${ex.date}@@${period}`);
-    if (alloc.substituteId) dayBusy.add(`${alloc.substituteId}@@${ex.date}@@${period}`);
+    const invigilator1Id = normalizeAssignedTeacherId(alloc.invigilator1Id);
+    const invigilator2Id = normalizeAssignedTeacherId(alloc.invigilator2Id);
+    const substituteId = normalizeAssignedTeacherId(alloc.substituteId);
+    if (invigilator1Id) dayBusy.add(`${invigilator1Id}@@${ex.date}@@${period}`);
+    if (invigilator2Id) dayBusy.add(`${invigilator2Id}@@${ex.date}@@${period}`);
+    if (substituteId) dayBusy.add(`${substituteId}@@${ex.date}@@${period}`);
   });
 
   const assignmentCounts = new Map<string, number>();
   allAllocations.forEach(alloc => {
-    if (alloc.invigilator1Id) {
-      assignmentCounts.set(alloc.invigilator1Id, (assignmentCounts.get(alloc.invigilator1Id) || 0) + 1);
+    const invigilator1Id = normalizeAssignedTeacherId(alloc.invigilator1Id);
+    const invigilator2Id = normalizeAssignedTeacherId(alloc.invigilator2Id);
+    const substituteId = normalizeAssignedTeacherId(alloc.substituteId);
+    if (invigilator1Id) {
+      assignmentCounts.set(invigilator1Id, (assignmentCounts.get(invigilator1Id) || 0) + 1);
     }
-    if (alloc.invigilator2Id) {
-      assignmentCounts.set(alloc.invigilator2Id, (assignmentCounts.get(alloc.invigilator2Id) || 0) + 1);
+    if (invigilator2Id) {
+      assignmentCounts.set(invigilator2Id, (assignmentCounts.get(invigilator2Id) || 0) + 1);
     }
-    if (alloc.substituteId) {
-      assignmentCounts.set(alloc.substituteId, (assignmentCounts.get(alloc.substituteId) || 0) + 1);
+    if (substituteId) {
+      assignmentCounts.set(substituteId, (assignmentCounts.get(substituteId) || 0) + 1);
     }
   });
 
@@ -1149,9 +1166,9 @@ export function autoAllocate(
       id: `${pair.exam.id}_${pair.room.id}`,
       examId: pair.exam.id,
       roomId: pair.room.id,
-      invigilator1Id: existingAlloc?.invigilator1Id || null,
-      invigilator2Id: existingAlloc?.invigilator2Id || null,
-      substituteId: existingAlloc?.substituteId || null
+      invigilator1Id: normalizeAssignedTeacherId(existingAlloc?.invigilator1Id),
+      invigilator2Id: normalizeAssignedTeacherId(existingAlloc?.invigilator2Id),
+      substituteId: normalizeAssignedTeacherId(existingAlloc?.substituteId)
     });
     const alloc = targetAllocationByKey.get(key)!;
     if (alloc.invigilator1Id) assignedCount++;

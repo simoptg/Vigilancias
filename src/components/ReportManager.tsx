@@ -123,7 +123,7 @@ export default function ReportManager({
       return parts.join(' ');
     };
 
-    const formatExamLine2 = (role: string, room: Room, exam: Exam) => {
+    const formatExamLine2 = (role: 'invigilator1' | 'invigilator2' | 'substitute', room: Room, exam: Exam) => {
       return `${getRoleLabel(role)} | Sala: ${room.name} | Data: ${exam.date} | Hora: ${exam.time}`;
     };
 
@@ -529,9 +529,10 @@ export default function ReportManager({
           // Add separator between substitutes (except after last one)
           if (index < substitutesArray.length - 1) {
             doc.setDrawColor(180, 180, 180);
-            doc.setLineDash([1, 1]);
+            const dashedDoc = doc as jsPDF & { setLineDash?: (segments: number[]) => void };
+            dashedDoc.setLineDash?.([1, 1]);
             doc.line(15, currentY + 1, 190, currentY + 1);
-            doc.setLineDash([]);
+            dashedDoc.setLineDash?.([]);
             currentY += 4;
           }
         });
