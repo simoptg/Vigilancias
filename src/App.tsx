@@ -528,20 +528,28 @@ export default function App() {
     }
   };
 
-  const handleClearAllocationsAll = async () => {
+  const handleClearAllocationsAll = async (dateToClear?: string) => {
     if (operationState.status === 'running') return;
-    beginOperation(lang === 'pt' ? 'Limpeza Global de Vigilantes' : 'Global Invigilator Cleanup');
+    
+    const operationTitle = dateToClear 
+      ? (lang === 'pt' ? `Limpeza de Vigilantes (${dateToClear})` : `Invigilator Cleanup (${dateToClear})`)
+      : (lang === 'pt' ? 'Limpeza Global de Vigilantes' : 'Global Invigilator Cleanup');
+    
+    beginOperation(operationTitle);
     pushOperationLog(lang === 'pt' ? 'A limpar alocações de vigilantes...' : 'Clearing invigilator allocations...');
     setOperationProgress(15);
     await waitForUiTick();
 
     try {
-      await api.allocations.clearAll();
+      if (dateToClear) {
+        await api.allocations.clearByDate(dateToClear);
+      } else {
+        await api.allocations.clearAll();
+      }
+      
       setOperationProgress(50);
       pushOperationLog(lang === 'pt' ? 'Alocações removidas na base de dados.' : 'Allocations removed from database.');
       await waitForUiTick();
-
-      setAllocations([]);
 
       const freshAllocations = await api.allocations.getAll();
       const normalized = Array.isArray(freshAllocations) ? freshAllocations : [];

@@ -45,7 +45,7 @@ interface AdminDashboardProps {
   onAutoTrigger: (date?: string) => void;
   onAutoTriggerRooms: () => void;
   onClearRooms: () => void;
-  onClearAllocations: () => Promise<void> | void;
+  onClearAllocations: (dateToClear?: string) => Promise<void> | void;
   onRefreshData: () => void;
   isSystemTaskRunning?: boolean;
 }
@@ -73,6 +73,8 @@ export default function AdminDashboard({
   // Clear Confirmation State
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
+  const [clearMode, setClearMode] = useState<'all' | 'specific'>('all');
+  const [selectedClearDate, setSelectedClearDate] = useState<string>('');
 
   // Auto Assign Modal State
   const [isAutoAssignModalOpen, setIsAutoAssignModalOpen] = useState(false);
@@ -335,6 +337,9 @@ export default function AdminDashboard({
           </button>
           <button
             onClick={() => {
+              const dates = getExamDates();
+              setSelectedClearDate(dates[0] || '');
+              setClearMode('all');
               setConfirmInput('');
               setIsClearModalOpen(true);
             }}
@@ -361,6 +366,55 @@ export default function AdminDashboard({
             </div>
 
             <div className="p-6 space-y-4">
+              {/* Mode selection */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  {lang === 'pt' ? 'Escolha o período:' : 'Choose period:'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setClearMode('all')}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                      clearMode === 'all'
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {lang === 'pt' ? 'Todos os dias' : 'All days'}
+                  </button>
+                  <button
+                    onClick={() => setClearMode('specific')}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                      clearMode === 'specific'
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {lang === 'pt' ? 'Dia específico' : 'Specific day'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Date picker */}
+              {clearMode === 'specific' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-700">
+                    {lang === 'pt' ? 'Selecione o dia:' : 'Select day:'}
+                  </label>
+                  <select
+                    value={selectedClearDate}
+                    onChange={(e) => setSelectedClearDate(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition"
+                  >
+                    {getExamDates().map((date) => (
+                      <option key={date} value={date}>
+                        {date}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <p className="text-xs text-slate-600 leading-relaxed">
                 {t.clearConfirmMessage}
                 <br />
@@ -381,7 +435,8 @@ export default function AdminDashboard({
                 <button
                   disabled={confirmInput !== t.confirmPhrase}
                   onClick={async () => {
-                    await Promise.resolve(onClearAllocations());
+                    const dateToClear = clearMode === 'specific' ? selectedClearDate : undefined;
+                    await Promise.resolve(onClearAllocations(dateToClear));
                     setIsClearModalOpen(false);
                   }}
                   className={`w-full py-3 rounded-xl text-sm font-bold transition flex items-center justify-center space-x-2 ${
