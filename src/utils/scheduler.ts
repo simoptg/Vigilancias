@@ -270,15 +270,35 @@ function canAssignTeacherToSlot(
   const period = getPeriodFromTime(exam.time);
   const alreadyInRoom = new Set([alloc.invigilator1Id, alloc.invigilator2Id, alloc.substituteId]);
 
-  if (alreadyInRoom.has(teacher.id)) return false;
-  if (hasSubjectConflict(teacher, exam)) return false;
-  if (isTeacherUnavailableAt(teacher, exam.date, exam.time, exam)) return false;
-  if (dayBusy.has(`${teacher.id}@@${exam.date}@@${period}`)) return false;
-  if (dayBusy.has(`${teacher.id}@@${exam.date}@@${getOtherPeriod(period)}`)) return false;
-  if (teacher.PISO_ZERO && !isFloorZero(room)) return false;
-  if (!options?.ignoreMax && getAssignmentCount(assignmentCounts, teacher.id) >= maxAssignmentsPerTeacher) {
+  if (alreadyInRoom.has(teacher.id)) {
+    console.log(`    [canAssign] ${teacher.name}: Já está na sala`);
     return false;
   }
+  if (hasSubjectConflict(teacher, exam)) {
+    console.log(`    [canAssign] ${teacher.name}: Conflito de disciplina`);
+    return false;
+  }
+  if (isTeacherUnavailableAt(teacher, exam.date, exam.time, exam)) {
+    console.log(`    [canAssign] ${teacher.name}: Não está disponível`);
+    return false;
+  }
+  if (dayBusy.has(`${teacher.id}@@${exam.date}@@${period}`)) {
+    console.log(`    [canAssign] ${teacher.name}: Já tem atribuição no período ${period}`);
+    return false;
+  }
+  if (dayBusy.has(`${teacher.id}@@${exam.date}@@${getOtherPeriod(period)}`)) {
+    console.log(`    [canAssign] ${teacher.name}: Já tem atribuição no período oposto`);
+    return false;
+  }
+  if (teacher.PISO_ZERO && !isFloorZero(room)) {
+    console.log(`    [canAssign] ${teacher.name}: É piso zero e a sala não é de piso zero`);
+    return false;
+  }
+  if (!options?.ignoreMax && getAssignmentCount(assignmentCounts, teacher.id) >= maxAssignmentsPerTeacher) {
+    console.log(`    [canAssign] ${teacher.name}: Já atingiu o máximo de atribuições`);
+    return false;
+  }
+  console.log(`    [canAssign] ${teacher.name}: OK!`);
   return true;
 }
 
@@ -350,12 +370,17 @@ function pickEeTeacher(
   excludeIds: Set<string | null>,
   options?: { mandatoryV1?: boolean }
 ): Teacher | null {
+  console.log(`[pickEeTeacher] Sala: ${room.name}, Exame: ${exam.name}`);
   const slotOptions = options?.mandatoryV1 ? { ignoreMax: true } : undefined;
 
-  const tryPool = (pool: Teacher[]): Teacher | null => {
+  const tryPool = (pool: Teacher[], poolName: string): Teacher | null => {
+    console.log(`[pickEeTeacher] Pool ${poolName} (${pool.length} docentes)`);
     const candidates = prioritizePisoZero(pool, room).filter(teacher => {
-      if (excludeIds.has(teacher.id)) return false;
-      return canAssignTeacherToSlot(
+      if (excludeIds.has(teacher.id)) {
+        console.log(`  → ${teacher.name}: Excluído (excludeIds)`);
+        return false;
+      }
+      const can = canAssignTeacherToSlot(
         teacher,
         exam,
         room,
@@ -365,11 +390,18 @@ function pickEeTeacher(
         maxAssignmentsPerTeacher,
         slotOptions
       );
+      if (!can) {
+        console.log(`  → ${teacher.name}: Não pode ser atribuído`);
+      }
+      return can;
     });
+    console.log(`  → Candidatos válidos: ${candidates.map(t => t.name)}`);
     return pickLeastUsedRandom(candidates, assignmentCounts);
   };
 
-  return tryPool(eeTeachersRegular) ?? tryPool(eeTeachersWithCargo);
+  const reg = tryPool(eeTeachersRegular, "Regular");
+  if (reg) return reg;
+  return tryPool(eeTeachersWithCargo, "Cargo");
 }
 
 function assignEeTeachersToExams(
