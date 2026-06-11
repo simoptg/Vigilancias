@@ -314,10 +314,10 @@ function prioritizePisoZero(candidates: Teacher[], room: Room): Teacher[] {
     console.log(`  → Filtrados (não piso zero): ${filtered.map(t => t.name)}`);
     return filtered;
   }
-  const pisoZeroCandidates = candidates.filter(teacher => teacher.PISO_ZERO);
-  const result = pisoZeroCandidates.length > 0 ? pisoZeroCandidates : candidates;
-  console.log(`  → Resultado (piso zero): ${result.map(t => t.name)}`);
-  return result;
+  // Em salas de piso 0, docentes PISO_ZERO são elegíveis, mas não exclusivos.
+  // Regra: PISO_ZERO só pode ir para piso 0; não há regra inversa.
+  console.log(`  → Resultado (piso zero): ${candidates.map(t => t.name)}`);
+  return candidates;
 }
 
 function pickLeastUsedRandom(candidates: Teacher[], assignmentCounts: Map<string, number>): Teacher | null {
