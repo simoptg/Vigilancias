@@ -251,7 +251,10 @@ function canAssignEeTeacherToEeExamSlot(
   onlyDate: boolean
 ): boolean {
   if (!isEeExam(exam)) return true;
+  // In EE exams, never allow EE as Vigilante 2
+  if (role === "invigilator2Id") return false;
   if (onlyDate) return role === "invigilator1Id";
+  // In global mode, only allow Vigilante 1 or Substitute
   return role === "invigilator1Id" || role === "substituteId";
 }
 
@@ -406,7 +409,7 @@ function assignEeTeachersToExams(
       clearTeacherFromSlot(alloc, "invigilator1Id", pair.exam, dayBusy, assignmentCounts);
     }
 
-    const selected = pickEeTeacher(
+    let selected = pickEeTeacher(
       eeTeachersRegular,
       eeTeachersWithCargo,
       pair.exam,
@@ -418,6 +421,45 @@ function assignEeTeachersToExams(
       new Set(),
       { mandatoryV1: true }
     );
+
+    // If no teacher found, try to free up an EE teacher who's already assigned to another role that day
+    if (!selected) {
+      const period = getPeriodFromTime(pair.exam.time);
+      // Iterate over all pairs to find any EE teacher assigned to a non-Vigilante-1 role on that day
+      for (const checkPair of pairs) {
+        if (selected) break;
+        const checkKey = allocationKey(checkPair.exam.id, checkPair.room.id);
+        const checkAlloc = targetAllocationByKey.get(checkKey);
+        if (!checkAlloc) continue;
+        // Check Vigilante 2 and Substitute
+        for (const checkRole of ["invigilator2Id", "substituteId"] as const) {
+          if (selected) break;
+          const checkTeacherId = checkAlloc[checkRole];
+          if (!checkTeacherId) continue;
+          const checkTeacher = teacherById.get(checkTeacherId);
+          if (!checkTeacher || !checkTeacher.EE) continue;
+          // Check if this teacher can be assigned to our slot
+          const excludeIds = new Set();
+          const tempSelected = pickEeTeacher(
+            [checkTeacher],
+            [],
+            pair.exam,
+            pair.room,
+            alloc,
+            dayBusy,
+            assignmentCounts,
+            maxAssignmentsPerTeacher,
+            excludeIds,
+            { mandatoryV1: true }
+          );
+          if (tempSelected) {
+            // Free them up!
+            clearTeacherFromSlot(checkAlloc, checkRole, checkPair.exam, dayBusy, assignmentCounts);
+            selected = tempSelected;
+          }
+        }
+      }
+    }
 
     if (!selected) {
       warnings.push(
