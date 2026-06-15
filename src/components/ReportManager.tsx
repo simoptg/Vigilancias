@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Teacher, Room, Exam, Allocation, Language, TeacherRole } from '../types';
 import { translations } from '../translations';
 import { 
@@ -32,6 +32,11 @@ export default function ReportManager({
   availableRoles,
 }: ReportManagerProps) {
   const t = translations[lang];
+  const [filterMode, setFilterMode] = useState<'all' | 'single'>('all');
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  
+  // Get unique dates from exams
+  const uniqueDates = Array.from(new Set((Array.isArray(exams) ? exams : []).map(exam => exam.date))).sort();
 
   const formatExamIdentity = (exam: Exam) => {
     if (lang === 'pt') {
@@ -59,7 +64,7 @@ export default function ReportManager({
     return lang === 'pt' ? 'Suplente' : 'Substitute';
   };
 
-  const getValidAllocationRecords = () => {
+  const getValidAllocationRecords = (filterDate: string | null = null) => {
     const examById = new Map((Array.isArray(exams) ? exams : []).map(exam => [exam.id, exam]));
     const roomById = new Map((Array.isArray(rooms) ? rooms : []).map(room => [room.id, room]));
 
@@ -69,13 +74,14 @@ export default function ReportManager({
         const room = roomById.get(alloc.roomId);
         if (!exam || !room) return null;
         if (Array.isArray(exam.roomIds) && exam.roomIds.length > 0 && !exam.roomIds.includes(alloc.roomId)) return null;
+        if (filterDate && exam.date !== filterDate) return null;
         return { alloc, exam, room };
       })
       .filter((record): record is { alloc: Allocation; exam: Exam; room: Room } => Boolean(record));
   };
 
   const handleExportTeachersPDF = () => {
-    const records = getValidAllocationRecords();
+    const records = getValidAllocationRecords(filterMode === 'single' && selectedDate ? selectedDate : null);
 
     type TeacherAssignment = {
       teacherId: string;
@@ -142,8 +148,11 @@ export default function ReportManager({
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
     doc.text(`${new Date().toLocaleDateString()}`, 14, 28);
+    if (filterMode === 'single' && selectedDate) {
+      doc.text(`${lang === 'pt' ? 'Filtro: ' : 'Filter: '}${selectedDate}`, 14, 34);
+    }
 
-    let currentY = 35;
+    let currentY = filterMode === 'single' && selectedDate ? 42 : 35;
     const sortedTeachers = [...(Array.isArray(teachers) ? teachers : [])]
       .filter(teacher => {
         const teacherAssignments = assignmentsByTeacher.get(teacher.id) || [];
@@ -262,7 +271,8 @@ export default function ReportManager({
     });
 
     addPageNumbers();
-    doc.save(`resumo_atribuicoes_${new Date().toISOString().slice(0, 10)}.pdf`);
+    const dateSuffix = filterMode === 'single' && selectedDate ? selectedDate : new Date().toISOString().slice(0, 10);
+    doc.save(`resumo_atribuicoes_${dateSuffix}.pdf`);
   };
 
   const handleExportOfficialScale = () => {
@@ -272,7 +282,8 @@ export default function ReportManager({
       format: 'a4'
     });
 
-    const records = getValidAllocationRecords();
+    const filterDate = filterMode === 'single' && selectedDate ? selectedDate : null;
+    const records = getValidAllocationRecords(filterDate);
     const teacherById = new Map((Array.isArray(teachers) ? teachers : []).map(teacher => [teacher.id, teacher]));
     const allocationsByExam = new Map<string, Array<{ alloc: Allocation; room: Room }>>();
 
@@ -283,6 +294,7 @@ export default function ReportManager({
 
     const activeExams = (Array.isArray(exams) ? exams : [])
       .filter(exam => allocationsByExam.has(exam.id))
+      .filter(exam => !filterDate || exam.date === filterDate)
       .sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date);
         if (a.time !== b.time) return a.time.localeCompare(b.time);
@@ -573,7 +585,8 @@ export default function ReportManager({
       }
     });
 
-    doc.save(`escala_vigilancias_${new Date().toISOString().slice(0, 10)}.pdf`);
+    const dateSuffix = filterMode === 'single' && selectedDate ? selectedDate : new Date().toISOString().slice(0, 10);
+    doc.save(`escala_vigilancias_${dateSuffix}.pdf`);
   };
 
   const handleExportVigilanceList = () => {
@@ -583,7 +596,8 @@ export default function ReportManager({
       format: 'a4'
     });
 
-    const records = getValidAllocationRecords();
+    const filterDate = filterMode === 'single' && selectedDate ? selectedDate : null;
+    const records = getValidAllocationRecords(filterDate);
     const teacherById = new Map((Array.isArray(teachers) ? teachers : []).map(teacher => [teacher.id, teacher]));
     
     // Collect all assignments by teacher
@@ -655,8 +669,13 @@ export default function ReportManager({
     doc.text(schoolYearLabel, 14, 27);
     doc.setFontSize(12);
     doc.text(title, 14, 33);
-
-    currentY = 45;
+    if (filterMode === 'single' && selectedDate) {
+      doc.setFontSize(10);
+      doc.text(`${lang === 'pt' ? 'Filtro: ' : 'Filter: '}${selectedDate}`, 14, 40);
+      currentY = 50;
+    } else {
+      currentY = 45;
+    }
 
     // Now process each teacher
     const sortedTeachers = [...(Array.isArray(teachers) ? teachers : [])]
@@ -752,39 +771,74 @@ export default function ReportManager({
     });
 
     addPageNumbers();
-    doc.save(`lista_vigilancias_${new Date().toISOString().slice(0, 10)}.pdf`);
+    const dateSuffix = filterMode === 'single' && selectedDate ? selectedDate : new Date().toISOString().slice(0, 10);
+    doc.save(`lista_vigilancias_${dateSuffix}.pdf`);
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-800">{t.tabReports}</h2>
           <p className="text-slate-500 text-xs">Análise de esforço e exportação oficial</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleExportTeachersPDF}
-            className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
-          >
-            <Download className="h-4 w-4" />
-            <span>{lang === 'pt' ? 'Exportar Professores (PDF)' : 'Export Teachers (PDF)'}</span>
-          </button>
-          <button
-            onClick={handleExportOfficialScale}
-            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
-          >
-            <Download className="h-4 w-4" />
-            <span>Exportar Escala Oficial (PDF)</span>
-          </button>
-          <button
-            onClick={handleExportVigilanceList}
-            className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
-          >
-            <Download className="h-4 w-4" />
-            <span>{lang === 'pt' ? 'Exportar Lista de Vigilâncias (PDF)' : 'Export Vigilance List (PDF)'}</span>
-          </button>
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex gap-2 items-center bg-white border border-slate-200 rounded-lg px-3 py-2">
+            <span className="text-xs text-slate-600">{lang === 'pt' ? 'Modo:' : 'Mode:'}</span>
+            <button
+              onClick={() => setFilterMode('all')}
+              className={`px-3 py-1 text-xs rounded border transition ${
+                filterMode === 'all' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-300 hover:border-blue-500'
+              }`}
+            >
+              {lang === 'pt' ? 'Todas' : 'All'}
+            </button>
+            <button
+              onClick={() => setFilterMode('single')}
+              className={`px-3 py-1 text-xs rounded border transition ${
+                filterMode === 'single' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-300 hover:border-blue-500'
+              }`}
+            >
+              {lang === 'pt' ? 'Data Específica' : 'Specific Date'}
+            </button>
+          </div>
+          {filterMode === 'single' && (
+            <select
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+            >
+              <option value="">{lang === 'pt' ? 'Escolha uma data' : 'Choose a date'}</option>
+              {uniqueDates.map(date => (
+                <option key={date} value={date}>{date}</option>
+              ))}
+            </select>
+          )}
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={handleExportTeachersPDF}
+          className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
+        >
+          <Download className="h-4 w-4" />
+          <span>{lang === 'pt' ? 'Exportar Professores (PDF)' : 'Export Teachers (PDF)'}</span>
+        </button>
+        <button
+          onClick={handleExportOfficialScale}
+          className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
+        >
+          <Download className="h-4 w-4" />
+          <span>Exportar Escala Oficial (PDF)</span>
+        </button>
+        <button
+          onClick={handleExportVigilanceList}
+          className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
+        >
+          <Download className="h-4 w-4" />
+          <span>{lang === 'pt' ? 'Exportar Lista de Vigilâncias (PDF)' : 'Export Vigilance List (PDF)'}</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
