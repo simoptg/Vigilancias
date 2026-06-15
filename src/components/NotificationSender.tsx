@@ -142,9 +142,10 @@ export default function NotificationSender({
       return;
     }
     
-    if (!confirm(lang === 'pt'
-      ? `Deseja enviar ${notificationsToSend.length} notificação(ões) por email?`
-      : `Do you want to send ${notificationsToSend.length} email notification(s)?`)) {
+    const isSingle = notificationsToSend.length === 1;
+    if (!confirm(isSingle
+      ? (lang === 'pt' ? `Deseja enviar notificação para ${notificationsToSend[0].teacherName}?` : `Do you want to send notification to ${notificationsToSend[0].teacherName}?`)
+      : (lang === 'pt' ? `Deseja enviar ${notificationsToSend.length} notificação(ões) por email?` : `Do you want to send ${notificationsToSend.length} email notification(s)?`))) {
       return;
     }
 
@@ -404,13 +405,13 @@ export default function NotificationSender({
             teacherAllocations.map(({ teacherId, teacherName, teacherEmail, allocations }) => (
               <div key={teacherId} className="p-5 hover:bg-slate-50/50 transition">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
+                  <div className="space-y-1 flex-1">
                     <h4 className="font-bold text-slate-900 text-sm">{teacherName}</h4>
                     <p className={`text-xs ${teacherEmail ? 'text-slate-500' : 'text-red-500 font-semibold'}`}>
                       {teacherEmail || (lang === 'pt' ? 'Sem email registado' : 'No email registered')}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 flex-1 justify-end">
                     {allocations.map((alloc, idx) => (
                       <div key={idx} className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] shadow-sm">
                         {alloc.examName ? (
@@ -428,6 +429,16 @@ export default function NotificationSender({
                         )}
                       </div>
                     ))}
+                    {teacherEmail && (
+                      <button
+                        onClick={() => handleSendEmails([{ teacherId, teacherName, teacherEmail, allocations }])}
+                        disabled={isSending}
+                        className="flex items-center gap-1 bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                      >
+                        <Send className="h-3 w-3" />
+                        {lang === 'pt' ? 'Enviar' : 'Send'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
