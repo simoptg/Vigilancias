@@ -172,6 +172,16 @@ async function saveEmailConfig(req: VercelRequest, res: VercelResponse) {
   return res.status(200).json(mapEmailConfigRow(rows[0]));
 }
 
+// Helper to generate a simple unique ID
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+}
+
+// Helper to add delay
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function sendNotifications(req: VercelRequest, res: VercelResponse) {
   const { notifications } = req.body as { notifications: TeacherNotification[] };
 
@@ -205,7 +215,9 @@ async function sendNotifications(req: VercelRequest, res: VercelResponse) {
   let failedCount = 0;
   let skippedCount = 0;
 
-  for (const notification of notifications) {
+  for (let i = 0; i < notifications.length; i++) {
+    const notification = notifications[i];
+    
     if (!notification.teacherEmail?.trim()) {
       skippedCount++;
       results.push({
@@ -239,28 +251,28 @@ async function sendNotifications(req: VercelRequest, res: VercelResponse) {
           success: false,
           error: error.message
         });
-        continue;
+      } else {
+        sentCount++;
+        results.push({
+          teacherName: notification.teacherName,
+          email: notification.teacherEmail,
+          success: true
+        });
+
+        await sql`
+          INSERT INTO notifications (id, timestamp, recipient_email, recipient_name, title, message, sent_via, read)
+          VALUES (
+            ${generateId()},
+            ${new Date().toISOString()},
+            ${notification.teacherEmail},
+            ${notification.teacherName},
+            ${subject},
+            ${text},
+            'email',
+            false
+          )
+        `;
       }
-
-      sentCount++;
-      results.push({
-        teacherName: notification.teacherName,
-        email: notification.teacherEmail,
-        success: true
-      });
-
-      await sql`
-        INSERT INTO notifications (timestamp, recipient_email, recipient_name, title, message, sent_via, read)
-        VALUES (
-          ${new Date().toISOString()},
-          ${notification.teacherEmail},
-          ${notification.teacherName},
-          ${subject},
-          ${text},
-          'email',
-          false
-        )
-      `;
     } catch (err) {
       failedCount++;
       results.push({
@@ -269,6 +281,11 @@ async function sendNotifications(req: VercelRequest, res: VercelResponse) {
         success: false,
         error: err instanceof Error ? err.message : 'Erro desconhecido'
       });
+    }
+
+    // Add delay to avoid rate limits (3 emails/second = ~333ms per email)
+    if (i < notifications.length - 1) {
+      await delay(333);
     }
   }
 

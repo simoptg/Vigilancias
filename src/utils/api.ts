@@ -89,6 +89,17 @@ export const api = {
       }
       return r.json();
     }),
+    sendTest: (testEmail: string) => fetch(`${API_BASE}/notifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sendTest', testEmail })
+    }).then(async r => {
+      if (!r.ok) {
+        const err = await r.json();
+        throw new Error(err.error || 'Failed to send test email');
+      }
+      return r.json();
+    }),
   },
   sendNotifications: (notifications: Array<{
     teacherId: string;
