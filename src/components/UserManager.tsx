@@ -4,6 +4,8 @@ import { translations } from '../translations';
 import { UserPlus, Trash2, Mail, User, Shield, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { api } from '../utils/api';
 
+const PROTECTED_ADMIN_EMAIL = 'stephane.simonet@djoaoii.com';
+
 interface AuthorizedUser {
   email: string;
   name: string;
@@ -72,7 +74,7 @@ export default function UserManager({ lang }: UserManagerProps) {
   };
 
   const handleDeleteUser = async (email: string) => {
-    if (email.toLowerCase() === 'pedro.santos@djoaoii.com') {
+    if (email.toLowerCase() === PROTECTED_ADMIN_EMAIL) {
       setError(lang === 'pt' ? 'Não é possível remover o administrador principal.' : 'Cannot remove the primary administrator.');
       return;
     }
@@ -205,14 +207,14 @@ export default function UserManager({ lang }: UserManagerProps) {
                   <div key={user.email} className="p-4 flex items-center justify-between hover:bg-slate-50 transition">
                     <div className="flex items-center gap-3">
                       <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                        user.email === 'pedro.santos@djoaoii.com' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                        user.email === PROTECTED_ADMIN_EMAIL ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
                       }`}>
                         {user.name.charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
                           {user.name}
-                          {user.email === 'pedro.santos@djoaoii.com' && (
+                          {user.email === PROTECTED_ADMIN_EMAIL && (
                             <span className="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase">Owner</span>
                           )}
                         </p>
@@ -227,9 +229,9 @@ export default function UserManager({ lang }: UserManagerProps) {
                       </span>
                       <button
                         onClick={() => handleDeleteUser(user.email)}
-                        disabled={user.email === 'pedro.santos@djoaoii.com'}
+                        disabled={user.email === PROTECTED_ADMIN_EMAIL}
                         className={`p-2 rounded-lg transition ${
-                          user.email === 'pedro.santos@djoaoii.com' 
+                          user.email === PROTECTED_ADMIN_EMAIL
                             ? 'text-slate-200 cursor-not-allowed' 
                             : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
                         }`}

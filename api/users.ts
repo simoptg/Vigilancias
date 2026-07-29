@@ -1,6 +1,8 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from './utils/db.js';
 
+const PROTECTED_ADMIN_EMAIL = 'stephane.simonet@djoaoii.com';
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { method } = req;
 
@@ -28,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!deleteEmail) return res.status(400).json({ error: 'Email is required' });
         
         // Proteção para nunca remover o email principal
-        if (deleteEmail.toString().toLowerCase() === 'pedro.santos@djoaoii.com') {
+        if (deleteEmail.toString().toLowerCase() === PROTECTED_ADMIN_EMAIL) {
           return res.status(403).json({ error: 'Cannot remove the primary administrator' });
         }
 
