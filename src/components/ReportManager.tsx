@@ -658,10 +658,12 @@ export default function ReportManager({
     const schoolYearLabel = lang === 'pt' ? 'Ano Letivo: 2025/2026' : 'School Year: 2025/2026';
 
     let currentY = 20;
+    const hasDateFilter = filterMode === 'single' && selectedDate;
+    const headerHeight = hasDateFilter ? 34 : 28;
 
     // Draw title header
     doc.setFillColor(15, 23, 42);
-    doc.rect(10, 10, 190, 28, 'F');
+    doc.rect(10, 10, 190, headerHeight, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
     doc.text(schoolName, 14, 20);
@@ -669,9 +671,9 @@ export default function ReportManager({
     doc.text(schoolYearLabel, 14, 27);
     doc.setFontSize(12);
     doc.text(title, 14, 33);
-    if (filterMode === 'single' && selectedDate) {
+    if (hasDateFilter) {
       doc.setFontSize(10);
-      doc.text(`${lang === 'pt' ? 'Filtro: ' : 'Filter: '}${selectedDate}`, 14, 40);
+      doc.text(`${lang === 'pt' ? 'Filtro: ' : 'Filter: '}${selectedDate}`, 14, 39);
       currentY = 50;
     } else {
       currentY = 45;

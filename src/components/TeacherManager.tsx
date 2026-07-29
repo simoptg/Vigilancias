@@ -9,6 +9,7 @@ import autoTable from 'jspdf-autotable';
 import { Teacher, Language, Exam, TeacherRole } from '../types';
 import { translations } from '../translations';
 import { api } from '../utils/api';
+import * as XLSX from 'xlsx';
 import { 
   Plus, 
   Trash2, 
@@ -287,6 +288,49 @@ export default function TeacherManager({
     doc.save(`lista_professores_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
 
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    
+    const getRoleName = (roleId: string | null | undefined) => {
+      if (!roleId) return '-';
+      const role = availableRoles.find(r => r.id === roleId);
+      return role ? role.name : roleId;
+    };
+
+    const teachersData = teachers.map(t => ({
+      'Nome': t.name,
+      'Grupo Disciplinar': t.subject_group,
+      'Disciplina': t.subject,
+      'Cargo': getRoleName(t.role),
+      'Email': t.email || '-',
+      'Disponível': t.available ? 'SIM' : 'NÃO',
+      'EE': t.EE ? 'SIM' : 'NÃO',
+      'Piso 0': t.PISO_ZERO ? 'SIM' : 'NÃO',
+      'Indisponibilidades': t.unavailabilities && t.unavailabilities.length > 0 
+        ? t.unavailabilities.map(u => {
+            let parts: string[] = [];
+            parts.push(u.date === 'all' ? (lang === 'pt' ? 'Todas as datas' : 'All dates') : u.date);
+            if (u.time !== 'all') {
+              parts.push(`(${u.time === '09:00' ? (lang === 'pt' ? 'Manhã' : 'Morning') : (lang === 'pt' ? 'Tarde' : 'Afternoon')})`);
+            }
+            if (u.year) {
+              parts.push(`Ano ${u.year}`);
+            }
+            if (u.subject_group) {
+              parts.push(`Grupo ${u.subject_group}`);
+            }
+            return parts.join(' ');
+          }).join('; ')
+        : (lang === 'pt' ? 'Nenhuma' : 'None')
+    }));
+
+    const wsTeachers = XLSX.utils.json_to_sheet(teachersData);
+    XLSX.utils.book_append_sheet(wb, wsTeachers, "Docentes");
+    
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Docentes_${dateStr}.xlsx`);
+  };
+
   return (
     <div id="teacher_manager" className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -295,6 +339,13 @@ export default function TeacherManager({
           <p className="text-slate-500 text-xs">{t.teacherSubtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow cursor-pointer"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            <span>{lang === 'pt' ? 'Exportar Excel' : 'Export Excel'}</span>
+          </button>
           <button
             onClick={handleExportPDF}
             className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow cursor-pointer"
