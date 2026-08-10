@@ -49,7 +49,7 @@ export interface Exam {
   time: string; // e.g., "08:45"
   shift?: string | null; // e.g., "T1", "T2"
   modality?: string | null; // e.g., "LO", "SP", "NE", "EE"
-  phase: string; // "1", "2"
+  phase: string; // "1", "2", "Extra"
   registrationsCount: number; // Number of students registered for this exam (N_Inscritos)
   EE: boolean; // Needs at least one EE teacher
   roomIds?: string[]; // Associated room IDs for this exam

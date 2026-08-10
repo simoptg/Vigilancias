@@ -18,7 +18,11 @@ export function formatExamLabel(exam: Exam): string {
   if (exam.variant) parts.push(`var. ${exam.variant}`);
   if (exam.code) parts.push(`cód. ${exam.code}`);
   if (exam.modality) parts.push(exam.modality);
-  if (exam.phase) parts.push(`fase ${exam.phase}`);
+  if (exam.phase) {
+    const phaseLabel =
+      exam.phase === '1' || exam.phase === '2' ? `fase ${exam.phase}` : exam.phase;
+    parts.push(phaseLabel);
+  }
   return parts.join(" · ");
 }
 

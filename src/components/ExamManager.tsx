@@ -11,6 +11,14 @@ import { getPeriodFromTime } from '../utils/scheduler';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+function getPhaseLabel(phase: string, lang: Language): string {
+  if (!phase) return '';
+  if (phase === '1' || phase === '2') {
+    return lang === 'pt' ? `${phase}ª Fase` : `${phase}st Phase`;
+  }
+  return phase;
+}
+
 function getMonthName(monthNumber: number, lang: Language): string {
   const monthsPt = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -359,7 +367,7 @@ export default function ExamManager({
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-slate-900 text-sm">{ex.name}</span>
                                 <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-bold">
-                                  {ex.phase}ª FASE
+                                  {getPhaseLabel(ex.phase, lang).toUpperCase()}
                                 </span>
                               </div>
                               <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-slate-500 font-medium">
@@ -445,6 +453,7 @@ export default function ExamManager({
                   <select value={phase} onChange={(e) => setPhase(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 bg-white">
                     <option value="1">1ª Fase</option>
                     <option value="2">2ª Fase</option>
+                    <option value="Extra">Extra</option>
                   </select>
                 </div>
               </div>

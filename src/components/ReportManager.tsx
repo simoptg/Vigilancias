@@ -34,7 +34,15 @@ export default function ReportManager({
   const t = translations[lang];
   const [filterMode, setFilterMode] = useState<'all' | 'single'>('all');
   const [selectedDate, setSelectedDate] = useState<string>('');
-  
+
+  const getPhaseLabel = (phase: string): string => {
+    if (!phase) return '';
+    if (phase === '1' || phase === '2') {
+      return lang === 'pt' ? `${phase}ª Fase` : `${phase}st Phase`;
+    }
+    return phase;
+  };
+
   // Get unique dates from exams
   const uniqueDates = Array.from(new Set((Array.isArray(exams) ? exams : []).map(exam => exam.date))).sort();
 
@@ -45,7 +53,7 @@ export default function ReportManager({
       parts.push(`${exam.year}º`);
       if (exam.shift) parts.push(exam.shift);
       if (exam.modality) parts.push(exam.modality);
-      parts.push(`${exam.phase}ª Fase`);
+      parts.push(getPhaseLabel(exam.phase));
       return parts.join(' | ');
     }
 
@@ -54,7 +62,7 @@ export default function ReportManager({
     parts.push(exam.year);
     if (exam.shift) parts.push(exam.shift);
     if (exam.modality) parts.push(exam.modality);
-    parts.push(`${exam.phase}st Phase`);
+    parts.push(getPhaseLabel(exam.phase));
     return parts.join(' | ');
   };
 
@@ -125,7 +133,7 @@ export default function ReportManager({
       if (exam.code) parts.push(`(${exam.code})`);
       if (exam.modality) parts.push(exam.modality);
       if (exam.shift) parts.push(exam.shift);
-      if (exam.phase) parts.push(`${exam.phase}ª Fase`);
+      if (exam.phase) parts.push(getPhaseLabel(exam.phase));
       return parts.join(' ');
     };
 
@@ -336,7 +344,7 @@ export default function ReportManager({
       if (exam.code) parts.push(`(${exam.code})`);
       if (exam.modality) parts.push(exam.modality);
       if (exam.shift) parts.push(exam.shift);
-      if (exam.phase) parts.push(`${exam.phase}ª Fase`);
+      if (exam.phase) parts.push(getPhaseLabel(exam.phase));
       return parts.join(' ');
     };
 
