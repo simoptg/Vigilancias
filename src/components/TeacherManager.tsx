@@ -10,16 +10,19 @@ import { Teacher, Language, Exam, TeacherRole } from '../types';
 import { translations } from '../translations';
 import { api } from '../utils/api';
 import * as XLSX from 'xlsx';
-import { 
-  Plus, 
-  Trash2, 
-  Edit2, 
-  Search, 
-  UserPlus, 
-  Check, 
+import { importTeachersFromExcel, ImportedTeacherRow } from '../utils/excel';
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  Search,
+  UserPlus,
+  Check,
   X,
   FileSpreadsheet,
-  Calendar
+  Calendar,
+  Upload,
+  Info
 } from 'lucide-react';
 
 interface TeacherManagerProps {
@@ -72,6 +75,20 @@ export default function TeacherManager({
   // New Confirm Clear states
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const clearTimerRef = useRef<any>(null);
+
+  interface ImportReportEntry {
+    rowIndex: number;
+    name: string;
+    mode: 'added' | 'updated' | 'skipped';
+    previousName?: string;
+    previousEmail?: string;
+    updates: string[];
+    notes: string[];
+  }
+  const [isImportReportOpen, setIsImportReportOpen] = useState(false);
+  const [importReport, setImportReport] = useState<ImportReportEntry[]>([]);
+  const [importing, setImporting] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Open modal for adding
   const handleOpenAdd = () => {
@@ -166,6 +183,291 @@ export default function TeacherManager({
     }
     return sortOrder === 'asc' ? comparison : -comparison;
   });
+
+  const handleImportTeachersClick = () => {
+    importFileInputRef.current?.click();
+  };
+
+  const findMatchingTeacher = (
+    row: ImportedTeacherRow,
+    existing: Teacher[]
+  ): Teacher | null => {
+    const nameNormalized = row.name.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const emailNormalized = (row.email || '').trim().toLowerCase();
+    if (emailNormalized) {
+      const byEmail = existing.find(t => (t.email || '').trim().toLowerCase() === emailNormalized);
+      if (byEmail) return byEmail;
+    }
+    if (nameNormalized) {
+      const byName = existing.find(
+        t => t.name.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === nameNormalized
+      );
+      if (byName) return byName;
+    }
+    return null;
+  };
+
+  const handleImportFileChosen = async (evt: React.ChangeEvent<HTMLInputElement>) => {
+    const files = evt.target.files;
+    if (!files || !files[0]) return;
+    const file = files[0];
+    evt.target.value = '';
+    setImporting(true);
+    try {
+      const { rows } = await importTeachersFromExcel(file, availableRoles);
+      const report: ImportReportEntry[] = [];
+      const localCurrent = [...teachers];
+      const seenEmailsToSkip = new Set<string>();
+      const seenNamesToSkip = new Set<string>();
+
+      for (const row of rows) {
+        const entry: ImportReportEntry = {
+          rowIndex: row.rowIndex,
+          name: row.name || (lang === 'pt' ? '(sem nome)' : '(no name)'),
+          mode: 'added',
+          updates: [],
+          notes: []
+        };
+        if (!row.hasName || !row.name.trim()) {
+          entry.mode = 'skipped';
+          entry.notes.push(lang === 'pt' ? 'Sem nome. Linha ignorada.' : 'Missing name. Row skipped.');
+          report.push(entry);
+          continue;
+        }
+        const roleIdUsed = row.hasRole && row.role ? String(row.role) : '';
+        if (roleIdUsed) {
+          const roleKnown = availableRoles.some(r => r.id === roleIdUsed);
+          if (!roleKnown) {
+            entry.notes.push(
+              (lang === 'pt'
+                ? `Cargo desconhecido (“${roleIdUsed}”). Aplicado texto livre.`
+                : `Unknown role (“${roleIdUsed}”). Stored as free text.`)
+            );
+          }
+        }
+        if (row.invalidUnavailabilitiesText) {
+          entry.notes.push(
+            (lang === 'pt'
+              ? `Indisponibilidades não foram importadas (formato não reconhecido).`
+              : `Unavailabilities were not imported (unrecognized format).`)
+          );
+        }
+        if (
+          row.hasAvailable &&
+          row.hasName &&
+          row.hasSubjectGroup &&
+          row.hasSubject &&
+          row.hasEmail &&
+          row.hasEE &&
+          row.hasPisoZero &&
+          row.hasRole &&
+          (row.available === null || row.EE === null || row.PISO_ZERO === null)
+        ) {
+          entry.notes.push(
+            lang === 'pt'
+              ? 'Coluna SIM/NÃO com valor não reconhecido: manteve o existente ou o padrão.'
+              : 'YES/NO column had unrecognized value; kept existing value or default.'
+          );
+        }
+
+        const existingMatch = findMatchingTeacher(row, localCurrent);
+        if (!existingMatch) {
+          const nameKey = row.name.trim().toLowerCase();
+          const emailKey = (row.email || '').trim().toLowerCase();
+          if (
+            (nameKey && seenNamesToSkip.has(nameKey)) ||
+            (emailKey && seenEmailsToSkip.has(emailKey))
+          ) {
+            entry.mode = 'skipped';
+            entry.notes.push(
+              lang === 'pt'
+                ? 'Docente duplicado no próprio ficheiro; não foi criado de novo.'
+                : 'Teacher duplicated inside the imported file; not created again.'
+            );
+            report.push(entry);
+            continue;
+          }
+          if (nameKey) seenNamesToSkip.add(nameKey);
+          if (emailKey) seenEmailsToSkip.add(emailKey);
+
+          if (!row.subject_group) entry.updates.push(lang === 'pt' ? 'Grupo Disciplinar: vazio' : 'Subject group: empty');
+          else entry.updates.push(`${lang === 'pt' ? 'Grupo Disciplinar' : 'Subject group'}: ${row.subject_group}`);
+          if (!row.subject) entry.updates.push(lang === 'pt' ? 'Disciplina: vazia' : 'Subject: empty');
+          else entry.updates.push(`${lang === 'pt' ? 'Disciplina' : 'Subject'}: ${row.subject}`);
+          if (!roleIdUsed) entry.updates.push(lang === 'pt' ? 'Cargo: vazio' : 'Role: empty');
+          else entry.updates.push(`${lang === 'pt' ? 'Cargo' : 'Role'}: ${roleIdUsed}`);
+          if (!row.email) entry.updates.push(lang === 'pt' ? 'Email: vazio' : 'Email: empty');
+          else entry.updates.push(`${lang === 'pt' ? 'Email' : 'Email'}: ${row.email}`);
+          entry.updates.push(
+            (lang === 'pt' ? 'Disponível' : 'Available') +
+              ': ' +
+              (row.available === null
+                ? lang === 'pt'
+                  ? 'padrão SIM'
+                  : 'default YES'
+                : row.available
+                  ? 'SIM'
+                  : 'NÃO')
+          );
+          entry.updates.push('EE: ' + (row.EE === null ? 'NÃO' : row.EE ? 'SIM' : 'NÃO'));
+          entry.updates.push(
+            (lang === 'pt' ? 'Piso 0' : 'Piso 0') +
+              ': ' +
+              (row.PISO_ZERO === null ? 'NÃO' : row.PISO_ZERO ? 'SIM' : 'NÃO')
+          );
+          if (row.unavailabilities && row.unavailabilities.length > 0) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Indisponibilidades' : 'Unavailabilities') +
+                ': ' +
+                row.unavailabilities.length
+            );
+          }
+
+          const newTeacher: Teacher = {
+            id: crypto.randomUUID(),
+            name: row.name.trim(),
+            subject_group: (row.subject_group || '').trim() || '',
+            subject: (row.subject || '').trim() || '',
+            role: roleIdUsed || '',
+            email: (row.email || '').trim() || '',
+            available: row.hasAvailable ? (row.available ?? true) : true,
+            EE: row.hasEE ? (row.EE ?? false) : false,
+            PISO_ZERO: row.hasPisoZero ? (row.PISO_ZERO ?? false) : false,
+            unavailabilities: row.hasUnavailabilities ? row.unavailabilities ?? [] : []
+          };
+
+          onAddTeacher(newTeacher);
+          localCurrent.push(newTeacher);
+          entry.mode = 'added';
+          report.push(entry);
+          continue;
+        }
+
+        const merged: Teacher = {
+          ...existingMatch,
+          unavailabilities: existingMatch.unavailabilities ? [...existingMatch.unavailabilities] : []
+        };
+        entry.mode = 'updated';
+        entry.previousName = existingMatch.name;
+        entry.previousEmail = existingMatch.email || undefined;
+
+        const getRoleName = (roleId: string | null | undefined) => {
+          if (!roleId) return '-';
+          const found = availableRoles.find(r => r.id === roleId);
+          return found ? found.name : roleId;
+        };
+
+        if (row.hasSubjectGroup) {
+          const newVal = (row.subject_group || '').trim() || '';
+          if (newVal !== existingMatch.subject_group) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Grupo Disciplinar' : 'Subject group') +
+                `: ${existingMatch.subject_group || '(vazio)'} → ${newVal || '(vazio)'}`
+            );
+            merged.subject_group = newVal;
+          }
+        }
+        if (row.hasSubject) {
+          const newVal = (row.subject || '').trim() || '';
+          if (newVal !== existingMatch.subject) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Disciplina' : 'Subject') +
+                `: ${existingMatch.subject || '(vazio)'} → ${newVal || '(vazio)'}`
+            );
+            merged.subject = newVal;
+          }
+        }
+        if (row.hasRole) {
+          const newVal = roleIdUsed || '';
+          if (newVal !== (existingMatch.role || '')) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Cargo' : 'Role') +
+                `: ${getRoleName(existingMatch.role || null)} → ${getRoleName(newVal || null)}`
+            );
+            merged.role = newVal;
+          }
+        }
+        if (row.hasEmail) {
+          const newVal = (row.email || '').trim() || '';
+          if (newVal !== (existingMatch.email || '')) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Email' : 'Email') +
+                `: ${existingMatch.email || '(vazio)'} → ${newVal || '(vazio)'}`
+            );
+            merged.email = newVal;
+          }
+        }
+        if (row.hasAvailable && row.available !== null) {
+          if (row.available !== existingMatch.available) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Disponível' : 'Available') +
+                `: ${existingMatch.available ? 'SIM' : 'NÃO'} → ${row.available ? 'SIM' : 'NÃO'}`
+            );
+            merged.available = row.available;
+          }
+        }
+        if (row.hasEE && row.EE !== null) {
+          if (row.EE !== existingMatch.EE) {
+            entry.updates.push(
+              `EE: ${existingMatch.EE ? 'SIM' : 'NÃO'} → ${row.EE ? 'SIM' : 'NÃO'}`
+            );
+            merged.EE = row.EE;
+          }
+        }
+        if (row.hasPisoZero && row.PISO_ZERO !== null) {
+          if (row.PISO_ZERO !== existingMatch.PISO_ZERO) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Piso 0' : 'Piso 0') +
+                `: ${existingMatch.PISO_ZERO ? 'SIM' : 'NÃO'} → ${row.PISO_ZERO ? 'SIM' : 'NÃO'}`
+            );
+            merged.PISO_ZERO = row.PISO_ZERO;
+          }
+        }
+        if (row.hasUnavailabilities && row.unavailabilities) {
+          const existing = existingMatch.unavailabilities || [];
+          const toAdd = row.unavailabilities.filter(u => {
+            return !existing.some(e =>
+              (e.date || '') === (u.date || '') &&
+              (e.time || 'all') === (u.time || 'all') &&
+              (e.year || '') === (u.year || '') &&
+              (e.subject_group || '') === (u.subject_group || '')
+            );
+          });
+          if (toAdd.length > 0) {
+            entry.updates.push(
+              (lang === 'pt' ? 'Indisponibilidades adicionadas: ' : 'Unavailabilities added: ') +
+                toAdd.length
+            );
+            merged.unavailabilities = [...existing, ...toAdd];
+          }
+        }
+
+        if (entry.updates.length === 0) {
+          entry.mode = 'updated';
+          entry.notes.push(
+            lang === 'pt'
+              ? 'O docente já existia; não houve alterações a aplicar.'
+              : 'Teacher already existed; no changes to apply.'
+          );
+        } else {
+          onUpdateTeacher(merged);
+          const idx = localCurrent.findIndex(t => t.id === merged.id);
+          if (idx >= 0) localCurrent[idx] = merged;
+        }
+        report.push(entry);
+      }
+
+      setImportReport(report);
+      setIsImportReportOpen(true);
+    } catch (err: any) {
+      alert(
+        (lang === 'pt' ? 'Erro a ler o ficheiro Excel: ' : 'Error reading Excel file: ') +
+          (err?.message || String(err))
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleExportPDF = () => {
     // Create a map from subject_group to subject name using exams
@@ -339,6 +641,29 @@ export default function TeacherManager({
           <p className="text-slate-500 text-xs">{t.teacherSubtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleImportTeachersClick}
+            disabled={importing}
+            className="flex items-center space-x-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-60 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow cursor-pointer"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            <span>
+              {importing
+                ? lang === 'pt'
+                  ? 'A importar...'
+                  : 'Importing...'
+                : lang === 'pt'
+                  ? 'Importar Excel'
+                  : 'Import Excel'}
+            </span>
+          </button>
+          <input
+            ref={importFileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleImportFileChosen}
+          />
           <button
             onClick={handleExportExcel}
             className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow cursor-pointer"
@@ -997,6 +1322,152 @@ export default function TeacherManager({
                   {lang === 'pt' ? 'Concluir' : 'Done'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Teachers Report Modal */}
+      {isImportReportOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-4">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">
+                  {lang === 'pt' ? 'Resultado da Importação' : 'Import Result'}
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                  <Info className="h-3 w-3" />
+                  {lang === 'pt'
+                    ? 'Nunca é apagado nenhum docente existente. Apenas são acrescentados ou atualizados campos.'
+                    : 'Existing teachers are never deleted. Only fields are added or updated.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsImportReportOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-full hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {(() => {
+              const added = importReport.filter(r => r.mode === 'added').length;
+              const updated = importReport.filter(r => r.mode === 'updated').length;
+              const skipped = importReport.filter(r => r.mode === 'skipped').length;
+              const changed = importReport.filter(
+                r => r.mode === 'updated' && (r.updates.length > 0 || r.notes.length === 0)
+              ).length;
+              return (
+                <div className="px-6 py-4 grid grid-cols-3 gap-3 bg-slate-50/60 border-b border-slate-100">
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                    <div className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700">
+                      {lang === 'pt' ? 'Adicionados' : 'Added'}
+                    </div>
+                    <div className="text-lg font-bold text-emerald-800 mt-0.5">{added}</div>
+                  </div>
+                  <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                    <div className="text-[10px] uppercase tracking-wider font-semibold text-blue-700">
+                      {lang === 'pt' ? 'Existentes' : 'Existing'}
+                    </div>
+                    <div className="text-lg font-bold text-blue-800 mt-0.5">
+                      {changed}/{updated}
+                    </div>
+                    <div className="text-[10px] text-blue-600 mt-0.5">
+                      {lang === 'pt' ? 'atualizados/verificados' : 'updated/checked'}
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                    <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-700">
+                      {lang === 'pt' ? 'Ignorados' : 'Skipped'}
+                    </div>
+                    <div className="text-lg font-bold text-amber-800 mt-0.5">{skipped}</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="overflow-y-auto p-6 space-y-3">
+              {importReport.length === 0 ? (
+                <div className="py-10 text-center text-slate-400 text-xs">
+                  {lang === 'pt' ? 'Sem resultados para mostrar.' : 'No results to display.'}
+                </div>
+              ) : (
+                importReport.map((entry, idx) => {
+                  const badge =
+                    entry.mode === 'added'
+                      ? {
+                          label: lang === 'pt' ? 'NOVO' : 'NEW',
+                          className: 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }
+                      : entry.mode === 'skipped'
+                        ? {
+                            label: lang === 'pt' ? 'IGNORADO' : 'SKIPPED',
+                            className: 'bg-amber-100 text-amber-800 border-amber-200'
+                          }
+                        : {
+                            label: lang === 'pt' ? 'ATUALIZADO' : 'UPDATED',
+                            className: 'bg-blue-100 text-blue-800 border-blue-200'
+                          };
+                  return (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-slate-200 p-4 bg-white hover:border-slate-300 transition"
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.className}`}
+                          >
+                            {badge.label}
+                          </span>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {lang === 'pt' ? 'Linha' : 'Row'} {entry.rowIndex}
+                          </div>
+                          <div className="text-sm font-semibold text-slate-900 truncate">
+                            {entry.name}
+                          </div>
+                        </div>
+                      </div>
+                      {entry.updates.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                            {lang === 'pt' ? 'Campos' : 'Fields'}
+                          </div>
+                          <ul className="list-disc list-inside text-[11px] text-slate-700 space-y-0.5">
+                            {entry.updates.map((u, i) => (
+                              <li key={i}>{u}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {entry.notes.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                            {lang === 'pt' ? 'Notas' : 'Notes'}
+                          </div>
+                          <ul className="list-disc list-inside text-[11px] text-slate-600 space-y-0.5">
+                            {entry.notes.map((n, i) => (
+                              <li key={i}>{n}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsImportReportOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-md"
+              >
+                {lang === 'pt' ? 'Fechar' : 'Close'}
+              </button>
             </div>
           </div>
         </div>
