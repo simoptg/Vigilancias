@@ -98,15 +98,24 @@ export function hasSpecialRole(teacher: Teacher): boolean {
 function buildRolePriorityMap(roles: TeacherRole[]): Map<string, number> {
   const map = new Map<string, number>();
   for (const role of roles) {
-    map.set(role.id, role.priority ?? 0);
+    const priority = role.priority ?? 0;
+    map.set(String(role.id || "").trim(), priority);
+    map.set(normalizeText(role.id), priority);
+    const nameExact = String(role.name || "").trim();
+    if (nameExact) map.set(nameExact, priority);
+    const nameNorm = normalizeText(role.name);
+    if (nameNorm) map.set(nameNorm, priority);
   }
   return map;
 }
 
 function getTeacherRolePriority(teacher: Teacher, rolePriorityById: Map<string, number>): number {
-  const roleId = String(teacher.role || "").trim();
-  if (!roleId) return -1;
-  return rolePriorityById.get(roleId) ?? 0;
+  const raw = String(teacher.role || "").trim();
+  if (!raw) return -1;
+  if (rolePriorityById.has(raw)) return rolePriorityById.get(raw)!;
+  const norm = normalizeText(raw);
+  if (norm && rolePriorityById.has(norm)) return rolePriorityById.get(norm)!;
+  return 0;
 }
 
 function pickCargoTeacher(

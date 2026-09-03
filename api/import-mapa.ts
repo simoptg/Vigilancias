@@ -22,20 +22,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await sql`DELETE FROM exams`;
     await sql`DELETE FROM teachers`;
 
-    // 2. Process Roles (Insert or Ignore)
+    // 2. Process Roles (Insert or Ignore) + build name->id map
+    const roleNameToId: Record<string, string> = {};
+    const roleIdSet: Set<string> = new Set();
     for (const role of roles) {
       await sql`
         INSERT INTO teacher_roles (id, name)
         VALUES (${role.id}, ${role.name})
         ON CONFLICT (id) DO NOTHING
       `;
+      roleNameToId[String(role.name || "").trim().toLowerCase()] = role.id;
+      roleIdSet.add(String(role.id));
     }
 
-    // 3. Process Teachers
+    const { rows: existingRoles } = await sql`SELECT id, name FROM teacher_roles`;
+    for (const r of existingRoles) {
+      roleNameToId[String(r.name || "").trim().toLowerCase()] = r.id;
+      roleIdSet.add(String(r.id));
+    }
+
+    // 3. Process Teachers (map role NAME -> ID when applicable)
     for (const t of teachers) {
+      let teacherRoleId: string | null = null;
+      const rawRole = String(t.role || "").trim();
+      if (rawRole) {
+        if (roleIdSet.has(rawRole)) {
+          teacherRoleId = rawRole;
+        } else {
+          const byName = roleNameToId[rawRole.toLowerCase()];
+          teacherRoleId = byName ?? rawRole;
+        }
+      }
       await sql`
         INSERT INTO teachers (id, name, subject_group, subject, role, email, available)
-        VALUES (${t.id}, ${t.name}, ${t.subject_group}, ${t.subject}, ${t.role}, ${t.email || null}, true)
+        VALUES (${t.id}, ${t.name}, ${t.subject_group}, ${t.subject}, ${teacherRoleId}, ${t.email || null}, true)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           subject_group = EXCLUDED.subject_group,
