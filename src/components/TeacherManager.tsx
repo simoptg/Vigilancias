@@ -75,6 +75,8 @@ export default function TeacherManager({
   // New Confirm Clear states
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const clearTimerRef = useRef<any>(null);
+  const [isConfirmingClearUnavail, setIsConfirmingClearUnavail] = useState(false);
+  const clearUnavailTimerRef = useRef<any>(null);
 
   interface ImportReportEntry {
     rowIndex: number;
@@ -158,6 +160,22 @@ export default function TeacherManager({
       clearTimerRef.current = setTimeout(() => {
         setIsConfirmingClear(false);
       }, 4050); // 4 seconds timeframe
+    }
+  };
+
+  const handleClearAllUnavailabilitiesClick = () => {
+    if (!unavailabilityTeacher) return;
+    if (isConfirmingClearUnavail) {
+      const updated = { ...unavailabilityTeacher, unavailabilities: [] };
+      onUpdateTeacher(updated);
+      setUnavailabilityTeacher(updated);
+      setIsConfirmingClearUnavail(false);
+      if (clearUnavailTimerRef.current) clearTimeout(clearUnavailTimerRef.current);
+    } else {
+      setIsConfirmingClearUnavail(true);
+      clearUnavailTimerRef.current = setTimeout(() => {
+        setIsConfirmingClearUnavail(false);
+      }, 4050);
     }
   };
 
@@ -1092,7 +1110,11 @@ export default function TeacherManager({
               </div>
               <button 
                 type="button"
-                onClick={() => setUnavailabilityTeacher(null)} 
+                onClick={() => {
+                  setUnavailabilityTeacher(null);
+                  setIsConfirmingClearUnavail(false);
+                  if (clearUnavailTimerRef.current) clearTimeout(clearUnavailTimerRef.current);
+                }} 
                 className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-full hover:bg-slate-100 transition"
               >
                 <X className="h-4 w-4" />
@@ -1313,10 +1335,31 @@ export default function TeacherManager({
               </div>
 
               {/* Close Button footer */}
-              <div className="flex justify-end pt-3 border-t border-slate-100">
+              <div className="flex justify-between pt-3 border-t border-slate-100 items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setUnavailabilityTeacher(null)}
+                  onClick={handleClearAllUnavailabilitiesClick}
+                  disabled={!unavailabilityTeacher?.unavailabilities || unavailabilityTeacher.unavailabilities.length === 0}
+                  className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed ${
+                    isConfirmingClearUnavail
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse'
+                      : 'bg-white border border-slate-200 text-rose-600 hover:border-rose-300 hover:bg-rose-50'
+                  }`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>
+                    {isConfirmingClearUnavail
+                      ? (lang === 'pt' ? 'Confirmar: limpar tudo?' : 'Confirm: clear all?')
+                      : (lang === 'pt' ? 'Limpar todas' : 'Clear all')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnavailabilityTeacher(null);
+                    setIsConfirmingClearUnavail(false);
+                    if (clearUnavailTimerRef.current) clearTimeout(clearUnavailTimerRef.current);
+                  }}
                   className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-md"
                 >
                   {lang === 'pt' ? 'Concluir' : 'Done'}
