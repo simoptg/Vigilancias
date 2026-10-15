@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { Room, Language } from '../types';
 import { translations } from '../translations';
-import { Plus, Home, Trash2, Edit2, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Home, Trash2, Edit2, X, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 
 interface RoomManagerProps {
   lang: Language;
@@ -30,6 +30,10 @@ export default function RoomManager({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Estado do arrastar para reordenar
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Form states
   const [name, setName] = useState('');
@@ -94,26 +98,26 @@ export default function RoomManager({
     setIsModalOpen(false);
   };
 
-  const moveRoom = (index: number, direction: 'up' | 'down') => {
-    const sortedRooms = [...rooms].sort((a, b) => a.priority - b.priority);
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    
-    if (targetIndex < 0 || targetIndex >= sortedRooms.length) return;
-    
-    // Swap rooms in the sorted array
-    const newRooms = [...sortedRooms];
-    [newRooms[index], newRooms[targetIndex]] = [newRooms[targetIndex], newRooms[index]];
-    
-    // Re-assign priorities based on new order to ensure consistency
-    const updatedRooms = newRooms.map((room, idx) => ({
+  const sortedRoomsList = [...rooms].sort((a, b) => a.priority - b.priority);
+
+  // Move a sala de `fromIndex` para `toIndex` e reatribui as prioridades
+  // de forma sequencial (1..n) para garantir consistência.
+  const reorderRooms = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || toIndex < 0 || toIndex >= sortedRoomsList.length) return;
+
+    const newRooms = [...sortedRoomsList];
+    const [movedRoom] = newRooms.splice(fromIndex, 1);
+    newRooms.splice(toIndex, 0, movedRoom);
+
+    onUpdateAllRooms(newRooms.map((room, idx) => ({
       ...room,
       priority: idx + 1
-    }));
-    
-    onUpdateAllRooms(updatedRooms);
+    })));
   };
 
-  const sortedRoomsList = [...rooms].sort((a, b) => a.priority - b.priority);
+  const moveRoom = (index: number, direction: 'up' | 'down') => {
+    reorderRooms(index, direction === 'up' ? index - 1 : index + 1);
+  };
 
   return (
     <div id="room_manager" className="space-y-6">
@@ -121,6 +125,13 @@ export default function RoomManager({
         <div>
           <h2 className="text-xl font-bold text-slate-800">{t.roomTitle}</h2>
           <p className="text-slate-500 text-xs">{t.roomSubtitle}</p>
+          {sortedRoomsList.length > 1 && (
+            <p className="text-slate-400 text-[10px] mt-1">
+              {lang === 'pt'
+                ? 'Arraste as salas pelo ícone para alterar a ordem de prioridade.'
+                : 'Drag rooms by the handle to change their priority order.'}
+            </p>
+          )}
         </div>
         <button
           onClick={handleOpenAdd}
@@ -136,19 +147,56 @@ export default function RoomManager({
           sortedRoomsList.map((room, index) => (
             <div 
               key={room.id} 
-              className="bg-white border border-slate-200 shadow-sm hover:shadow transition rounded-xl p-5 relative overflow-hidden group"
+              onDragOver={(e) => {
+                if (draggedIndex === null) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragOverIndex !== index) setDragOverIndex(index);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (draggedIndex !== null) reorderRooms(draggedIndex, index);
+                setDraggedIndex(null);
+                setDragOverIndex(null);
+              }}
+              className={`bg-white border shadow-sm hover:shadow transition rounded-xl p-5 relative overflow-hidden group ${
+                draggedIndex === index ? 'opacity-40 border-blue-300' : 'border-slate-200'
+              } ${
+                dragOverIndex === index && draggedIndex !== null && draggedIndex !== index
+                  ? 'ring-2 ring-blue-400 ring-offset-1'
+                  : ''
+              }`}
             >
               {/* Nice ambient ceiling tab accent */}
               <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500" />
 
               <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <Home className="h-4 w-4 text-slate-400" />
-                    <span className="font-bold text-slate-900 text-sm">{room.name}</span>
+                <div className="flex items-start space-x-1.5 min-w-0">
+                  <div
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggedIndex(index);
+                      setDragOverIndex(null);
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', room.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedIndex(null);
+                      setDragOverIndex(null);
+                    }}
+                    className="mt-0.5 -ml-1 p-0.5 rounded text-slate-300 hover:text-blue-600 hover:bg-slate-50 cursor-grab active:cursor-grabbing shrink-0"
+                    title={lang === 'pt' ? 'Arraste para reordenar' : 'Drag to reorder'}
+                  >
+                    <GripVertical className="h-4 w-4" />
                   </div>
-                  <div className="text-[10px] text-slate-400 font-mono">
-                    Prioridade: {room.priority}
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center space-x-2">
+                      <Home className="h-4 w-4 text-slate-400 shrink-0" />
+                      <span className="font-bold text-slate-900 text-sm truncate">{room.name}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Prioridade: {room.priority}
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-col space-y-1 opacity-0 group-hover:opacity-100 transition-opacity">
