@@ -66,7 +66,7 @@ export default function TeacherManager({
   const [name, setName] = useState('');
   const [subjectGroup, setSubjectGroup] = useState('300');
   const [subject, setSubject] = useState('');
-  const [role, setRole] = useState('professor');
+  const [role, setRole] = useState('');
   const [email, setEmail] = useState('');
   const [available, setAvailable] = useState(true);
   const [EE, setEE] = useState(false);
@@ -98,7 +98,7 @@ export default function TeacherManager({
     setName('');
     setSubjectGroup('300');
     setSubject('');
-    setRole('Professor');
+    setRole('');
     setEmail('');
     setAvailable(true);
     setEE(false);
