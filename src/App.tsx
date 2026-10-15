@@ -118,6 +118,10 @@ export default function App() {
         name: nextSession.user.name || '',
       };
       setSession(userSession);
+    } else if (nextStatus === 'unauthenticated') {
+      // A sessão NextAuth terminou: não manter uma sessão local órfã no localStorage
+      setSession(null);
+      localStorage.removeItem('v_session');
     }
   }, [nextSession, nextStatus]);
 
@@ -222,12 +226,22 @@ export default function App() {
   };
 
   // LOGOUT
-  const handleLogout = () => {
-    if (nextStatus === 'authenticated') {
-      signOut();
-    }
+  const handleLogout = async () => {
+    // Limpar a sessão local de forma síncrona: evita que o localStorage
+    // preserve uma sessão órfã durante o processo de logout.
     setSession(null);
+    localStorage.removeItem('v_session');
     setActiveTab('dashboard');
+
+    if (nextStatus === 'authenticated') {
+      try {
+        // redirect: false evita navegação concorrente com a limpeza do estado;
+        // o SessionProvider atualiza o estado da sessão ao concluir o pedido.
+        await signOut({ redirect: false });
+      } catch (error) {
+        console.error('Error signing out:', error);
+      }
+    }
   };
 
   const handleClearAllTeachers = async () => {
