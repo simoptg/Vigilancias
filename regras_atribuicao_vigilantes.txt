@@ -18,12 +18,25 @@
 8. **Normalização de IDs inválidos de docente**  
    Valores vazios, `"null"` e `"undefined"` são tratados como ausência de docente.
 
-## 2) Cálculo do máximo de vigilâncias por docente
-- É calculado com base nas vagas totais no `scope` de execução (já preenchidas + por preencher).
-- Fórmula aplicada:
-  - `totalSlots`
-  - `maxAssignmentsPerTeacher = ceil(totalSlots / docentesElegíveisBase)`
-- O objetivo é equilibrar distribuição sem ignorar carga histórica.
+## 2) Cálculo do máximo de vigilâncias por docente (equilíbrio)
+O cálculo verifica sempre duas dimensões em simultâneo: o **total já realizado por cada docente**
+(histórico de todas as datas + atribuições desta execução) e as **vigilâncias atribuídas em cada dia**.
+
+- **Limite global por docente**
+  - `historicoElegivel` = soma das vigilâncias já atribuídas (todas as datas) aos docentes elegíveis
+  - `vagasPorPreencher` = vagas do scope ainda sem docente
+  - `maxTotal = ceil((historicoElegivel + vagasPorPreencher) / docentesElegiveis)`
+  - O limite funciona como alvo de equilíbrio do pool, já contabilizando a carga histórica.
+- **Limite diário por docente**
+  - `maxDia(data) = ceil(vagasDoDia(data) / docentesElegiveis)`
+  - Impede a concentração de vigilâncias num único dia.
+- **Elegibilidade de equilíbrio**: um docente só é atribuído se
+  `totalAtribuido < maxTotal` **e** `atribuidoNoDia < maxDia(data)`.
+- **Seleção equilibrada**: entre os candidatos elegíveis é escolhido o de **menor total acumulado**;
+  em caso de empate, o de **menor número de vigilâncias nesse dia**; o empate final resolve-se aleatoriamente.
+- `docentesElegiveis` = docentes disponíveis sem cargo especial (mínimo 1).
+- **Exceção**: o `Vigilante 1` de exame EE é obrigatório e ignora o limite de equilíbrio
+  (continua sujeito às restantes regras estruturais, incluindo a regra de um docente por dia).
 
 ## 3) Definição de Exame EE
 Um exame é tratado como EE quando:

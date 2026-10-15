@@ -121,7 +121,8 @@ function getTeacherRolePriority(teacher: Teacher, rolePriorityById: Map<string, 
 function pickCargoTeacher(
   candidates: Teacher[],
   rolePriorityById: Map<string, number>,
-  assignmentCounts: Map<string, number>
+  balance: BalanceTracker,
+  date: string
 ): Teacher | null {
   if (candidates.length === 0) return null;
 
@@ -131,7 +132,7 @@ function pickCargoTeacher(
 
   for (const priority of priorities) {
     const tier = candidates.filter(t => getTeacherRolePriority(t, rolePriorityById) === priority);
-    const selected = pickLeastUsedRandom(tier, assignmentCounts);
+    const selected = pickLeastUsedRandom(tier, balance, date);
     if (selected) return selected;
   }
 
@@ -169,8 +170,135 @@ function normalizeAssignedTeacherId(teacherId: string | null | undefined): strin
   return normalized;
 }
 
-function getAssignmentCount(assignmentCounts: Map<string, number>, teacherId: string): number {
-  return assignmentCounts.get(teacherId) || 0;
+/** Chave de contagem diária de vigilâncias: docente + data. */
+function dayCountKey(teacherId: string, date: string): string {
+  return `${teacherId}@@${date}`;
+}
+
+/**
+ * Estado de equilíbrio da distribuição de vigilâncias.
+ * - `totalCounts`: total de vigilâncias por docente (histórico + atribuídas nesta execução)
+ * - `dayCounts`: vigilâncias por docente e por dia
+ * - `scopeCounts`: vigilâncias já atribuídas dentro do scope da execução
+ * - `maxTotal`: limite de equilíbrio global por docente
+ * - `maxPerDayByDate`: limite de equilíbrio diário por docente
+ * - `eligibleCount`: nº de docentes elegíveis usado como base do equilíbrio
+ */
+interface BalanceTracker {
+  totalCounts: Map<string, number>;
+  dayCounts: Map<string, number>;
+  scopeCounts: Map<string, number>;
+  maxTotal: number;
+  maxPerDayByDate: Map<string, number>;
+  eligibleCount: number;
+}
+
+/** Total de vigilâncias já atribuídas ao docente (histórico + execução atual). */
+function getTotalCount(tracker: BalanceTracker, teacherId: string): number {
+  return tracker.totalCounts.get(teacherId) || 0;
+}
+
+/** Nº de vigilâncias já atribuídas ao docente numa determinada data. */
+function getDayCount(tracker: BalanceTracker, teacherId: string, date: string): number {
+  return tracker.dayCounts.get(dayCountKey(teacherId, date)) || 0;
+}
+
+/**
+ * Verifica se o docente já esgotou o limite de equilíbrio,
+ * considerando o total acumulado (histórico) e as vigilâncias do próprio dia.
+ */
+function isOverBalanceLimit(tracker: BalanceTracker, teacherId: string, date: string): boolean {
+  if (getTotalCount(tracker, teacherId) >= tracker.maxTotal) return true;
+  const dayMax = tracker.maxPerDayByDate.get(date);
+  if (dayMax !== undefined && getDayCount(tracker, teacherId, date) >= dayMax) return true;
+  return false;
+}
+
+/** Regista uma vigilância nas contagens de equilíbrio (total e diária). */
+function registerAssignmentCount(tracker: BalanceTracker, teacherId: string, date: string): void {
+  tracker.totalCounts.set(teacherId, getTotalCount(tracker, teacherId) + 1);
+  const key = dayCountKey(teacherId, date);
+  tracker.dayCounts.set(key, (tracker.dayCounts.get(key) || 0) + 1);
+  tracker.scopeCounts.set(teacherId, (tracker.scopeCounts.get(teacherId) || 0) + 1);
+}
+
+/**
+ * Constrói o estado de equilíbrio a partir do histórico de atribuições e do scope.
+ * - Limite global: `ceil((histórico elegível + vagas por preencher) / docentes elegíveis)`
+ * - Limite diário: `ceil(vagas do dia / docentes elegíveis)`
+ */
+function buildBalanceTracker(
+  teachers: Teacher[],
+  pairs: Array<{ exam: Exam; room: Room }>,
+  historicalAllocations: Allocation[],
+  examById: Map<string, Exam>,
+  scopeExamIds: Set<string>,
+  eligibleTeachers: Teacher[]
+): BalanceTracker {
+  const safeEligibleCount = Math.max(eligibleTeachers.length, 1);
+  const availableTeachers = teachers.filter(teacher => teacher.available);
+  const totalCounts = new Map<string, number>();
+  const dayCounts = new Map<string, number>();
+  const scopeCounts = new Map<string, number>();
+
+  const register = (teacherId: string | null, date: string, inScope: boolean) => {
+    if (!teacherId) return;
+    totalCounts.set(teacherId, (totalCounts.get(teacherId) || 0) + 1);
+    const key = dayCountKey(teacherId, date);
+    dayCounts.set(key, (dayCounts.get(key) || 0) + 1);
+    if (inScope) {
+      scopeCounts.set(teacherId, (scopeCounts.get(teacherId) || 0) + 1);
+    }
+  };
+
+  historicalAllocations.forEach(alloc => {
+    const exam = examById.get(alloc.examId);
+    if (!exam) return;
+    const inScope = scopeExamIds.has(exam.id);
+    register(normalizeAssignedTeacherId(alloc.invigilator1Id), exam.date, inScope);
+    register(normalizeAssignedTeacherId(alloc.invigilator2Id), exam.date, inScope);
+    register(normalizeAssignedTeacherId(alloc.substituteId), exam.date, inScope);
+  });
+
+  availableTeachers.forEach(teacher => {
+    if (!totalCounts.has(teacher.id)) totalCounts.set(teacher.id, 0);
+    if (!scopeCounts.has(teacher.id)) scopeCounts.set(teacher.id, 0);
+  });
+
+  let scopeSlots = 0;
+  const slotsPerDate = new Map<string, number>();
+  for (const pair of pairs) {
+    scopeSlots += ALLOCATION_ROLES.length;
+    slotsPerDate.set(
+      pair.exam.date,
+      (slotsPerDate.get(pair.exam.date) || 0) + ALLOCATION_ROLES.length
+    );
+  }
+
+  const historicalTotal = eligibleTeachers.reduce(
+    (sum, teacher) => sum + (totalCounts.get(teacher.id) || 0),
+    0
+  );
+  const scopeAssigned = [...scopeCounts.values()].reduce((sum, count) => sum + count, 0);
+  const remainingSlots = Math.max(scopeSlots - scopeAssigned, 0);
+  const maxTotal = Math.max(
+    1,
+    Math.ceil((historicalTotal + remainingSlots) / safeEligibleCount)
+  );
+
+  const maxPerDayByDate = new Map<string, number>();
+  slotsPerDate.forEach((slots, date) => {
+    maxPerDayByDate.set(date, Math.max(1, Math.ceil(slots / safeEligibleCount)));
+  });
+
+  return {
+    totalCounts,
+    dayCounts,
+    scopeCounts,
+    maxTotal,
+    maxPerDayByDate,
+    eligibleCount: safeEligibleCount
+  };
 }
 
 function getSortedPairs(exams: Exam[], rooms: Room[]): Array<{ exam: Exam; room: Room }> {
@@ -258,8 +386,7 @@ function canAssignTeacherToSlot(
   room: Room,
   alloc: Allocation,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
-  maxAssignmentsPerTeacher: number,
+  balance: BalanceTracker,
   options?: { ignoreMax?: boolean }
 ): boolean {
   const period = getPeriodFromTime(exam.time);
@@ -289,8 +416,10 @@ function canAssignTeacherToSlot(
     console.log(`    [canAssign] ${teacher.name}: É piso zero e a sala não é de piso zero`);
     return false;
   }
-  if (!options?.ignoreMax && getAssignmentCount(assignmentCounts, teacher.id) >= maxAssignmentsPerTeacher) {
-    console.log(`    [canAssign] ${teacher.name}: Já atingiu o máximo de atribuições`);
+  if (!options?.ignoreMax && isOverBalanceLimit(balance, teacher.id, exam.date)) {
+    console.log(
+      `    [canAssign] ${teacher.name}: Limite de equilíbrio atingido (total ${getTotalCount(balance, teacher.id)}/${balance.maxTotal}; dia ${exam.date} ${getDayCount(balance, teacher.id, exam.date)}/${balance.maxPerDayByDate.get(exam.date) ?? "-"})`
+    );
     return false;
   }
   console.log(`    [canAssign] ${teacher.name}: OK!`);
@@ -330,11 +459,17 @@ function prioritizePisoZero(candidates: Teacher[], room: Room): Teacher[] {
   return result;
 }
 
-function pickLeastUsedRandom(candidates: Teacher[], assignmentCounts: Map<string, number>): Teacher | null {
+/**
+ * Seleciona o docente com menor carga total (equilíbrio), desempatando pelo
+ * menor nº de vigilâncias já atribuídas no próprio dia.
+ */
+function pickLeastUsedRandom(candidates: Teacher[], balance: BalanceTracker, date: string): Teacher | null {
   if (candidates.length === 0) return null;
-  const minCount = Math.min(...candidates.map(teacher => getAssignmentCount(assignmentCounts, teacher.id)));
-  const leastUsed = candidates.filter(teacher => getAssignmentCount(assignmentCounts, teacher.id) === minCount);
-  return randomPick(leastUsed);
+  const minTotal = Math.min(...candidates.map(teacher => getTotalCount(balance, teacher.id)));
+  const leastUsed = candidates.filter(teacher => getTotalCount(balance, teacher.id) === minTotal);
+  const minDay = Math.min(...leastUsed.map(teacher => getDayCount(balance, teacher.id, date)));
+  const leastUsedToday = leastUsed.filter(teacher => getDayCount(balance, teacher.id, date) === minDay);
+  return randomPick(leastUsedToday);
 }
 
 function assignTeacherToSlot(
@@ -344,7 +479,7 @@ function assignTeacherToSlot(
   exam: Exam,
   room: Room,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
+  balance: BalanceTracker,
   notifications: Array<{ teacherId: string; message: string }>,
   labelSuffix = ""
 ): void {
@@ -352,7 +487,7 @@ function assignTeacherToSlot(
   alloc[role] = teacher.id;
   const period = getPeriodFromTime(exam.time);
   dayBusy.add(`${teacher.id}@@${exam.date}@@${period}`);
-  assignmentCounts.set(teacher.id, getAssignmentCount(assignmentCounts, teacher.id) + 1);
+  registerAssignmentCount(balance, teacher.id, exam.date);
   notifications.push({
     teacherId: teacher.id,
     message: `${ROLE_LABEL_PT[role]}${labelSuffix} em ${room.name} - ${exam.name} (${exam.date}).`
@@ -366,8 +501,7 @@ function pickEeTeacher(
   room: Room,
   alloc: Allocation,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
-  maxAssignmentsPerTeacher: number,
+  balance: BalanceTracker,
   excludeIds: Set<string | null>,
   options?: { mandatoryV1?: boolean }
 ): Teacher | null {
@@ -387,8 +521,7 @@ function pickEeTeacher(
         room,
         alloc,
         dayBusy,
-        assignmentCounts,
-        maxAssignmentsPerTeacher,
+        balance,
         slotOptions
       );
       if (!can) {
@@ -398,7 +531,7 @@ function pickEeTeacher(
     });
     candidates = prioritizePisoZero(candidates, room);
     console.log(`  → Candidatos válidos: ${candidates.map(t => t.name)}`);
-    return pickLeastUsedRandom(candidates, assignmentCounts);
+    return pickLeastUsedRandom(candidates, balance, exam.date);
   };
 
   const reg = tryPool(eeTeachersRegular, "Regular");
@@ -411,8 +544,7 @@ function assignEeTeachersToExams(
   teachers: Teacher[],
   targetAllocationByKey: Map<string, Allocation>,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
-  maxAssignmentsPerTeacher: number,
+  balance: BalanceTracker,
   warnings: string[],
   notifications: Array<{ teacherId: string; message: string }>,
   onlyDate: boolean
@@ -471,8 +603,7 @@ function assignEeTeachersToExams(
       pair.room,
       alloc,
       dayBusy,
-      assignmentCounts,
-      maxAssignmentsPerTeacher,
+      balance,
       new Set(),
       { mandatoryV1: true }
     );
@@ -489,7 +620,7 @@ function assignEeTeachersToExams(
         pair.exam,
         pair.room,
         dayBusy,
-        assignmentCounts,
+        balance,
         notifications,
         hasNoSpecialRole(selected) ? " (EE)" : " (EE/cargo)"
       );
@@ -511,8 +642,7 @@ function assignEeTeachersToExams(
         pair.room,
         alloc,
         dayBusy,
-        assignmentCounts,
-        maxAssignmentsPerTeacher,
+        balance,
         excludeIds
       );
       if (selected) {
@@ -523,7 +653,7 @@ function assignEeTeachersToExams(
           pair.exam,
           pair.room,
           dayBusy,
-          assignmentCounts,
+          balance,
           notifications,
           hasNoSpecialRole(selected) ? " (EE)" : " (EE/cargo)"
         );
@@ -537,8 +667,7 @@ function assignRemainingEeTeachers(
   teachers: Teacher[],
   targetAllocationByKey: Map<string, Allocation>,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
-  maxAssignmentsPerTeacher: number,
+  balance: BalanceTracker,
   notifications: Array<{ teacherId: string; message: string }>,
   warnings: string[]
 ): void {
@@ -567,8 +696,7 @@ function assignRemainingEeTeachers(
       pair.room,
       alloc,
       dayBusy,
-      assignmentCounts,
-      maxAssignmentsPerTeacher,
+      balance,
       new Set(),
       { mandatoryV1: true }
     );
@@ -587,7 +715,7 @@ function assignRemainingEeTeachers(
       pair.exam,
       pair.room,
       dayBusy,
-      assignmentCounts,
+      balance,
       notifications,
       hasNoSpecialRole(selected) ? " (EE)" : " (EE/cargo)"
     );
@@ -607,8 +735,7 @@ function assignRemainingEeTeachers(
         pair.room,
         alloc,
         dayBusy,
-        assignmentCounts,
-        maxAssignmentsPerTeacher,
+        balance,
         excludeIds
       );
       if (!selected) continue;
@@ -620,7 +747,7 @@ function assignRemainingEeTeachers(
         pair.exam,
         pair.room,
         dayBusy,
-        assignmentCounts,
+        balance,
         notifications,
         hasNoSpecialRole(selected) ? " (EE)" : " (EE/cargo)"
       );
@@ -633,14 +760,13 @@ function assignRestrictedTeachers(
   restrictedTeachers: Teacher[],
   targetAllocationByKey: Map<string, Allocation>,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
-  maxAssignmentsPerTeacher: number,
+  balance: BalanceTracker,
   notifications: Array<{ teacherId: string; message: string }>,
   restrictEeToNonEeExams: boolean,
   onlyDate: boolean
 ): void {
   for (const teacher of restrictedTeachers) {
-    const remainingSlots = maxAssignmentsPerTeacher - getAssignmentCount(assignmentCounts, teacher.id);
+    const remainingSlots = balance.maxTotal - getTotalCount(balance, teacher.id);
     if (remainingSlots <= 0) continue;
 
     let assignmentsDone = 0;
@@ -663,8 +789,7 @@ function assignRestrictedTeachers(
           pair.room,
           alloc,
           dayBusy,
-          assignmentCounts,
-          maxAssignmentsPerTeacher
+          balance
         );
       });
 
@@ -682,7 +807,7 @@ function assignRestrictedTeachers(
         pair.exam,
         pair.room,
         dayBusy,
-        assignmentCounts,
+        balance,
         notifications
       );
       assignmentsDone++;
@@ -697,8 +822,7 @@ function assignCargoTeachers(
   rolePriorityById: Map<string, number>,
   targetAllocationByKey: Map<string, Allocation>,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
-  maxAssignmentsPerTeacher: number,
+  balance: BalanceTracker,
   notifications: Array<{ teacherId: string; message: string }>,
   restrictEeToNonEeExams: boolean,
   onlyDate: boolean
@@ -719,8 +843,7 @@ function assignCargoTeachers(
           pair.room,
           alloc,
           dayBusy,
-          assignmentCounts,
-          maxAssignmentsPerTeacher
+          balance
         )
       );
 
@@ -737,7 +860,7 @@ function assignCargoTeachers(
         pool = candidates;
       }
 
-      const selected = pickCargoTeacher(pool, rolePriorityById, assignmentCounts);
+      const selected = pickCargoTeacher(pool, rolePriorityById, balance, pair.exam.date);
       if (!selected) continue;
 
       assignTeacherToSlot(
@@ -747,7 +870,7 @@ function assignCargoTeachers(
         pair.exam,
         pair.room,
         dayBusy,
-        assignmentCounts,
+        balance,
         notifications,
         " (cargo)"
       );
@@ -761,8 +884,7 @@ function assignGenericTeachers(
   genericPool: Teacher[],
   targetAllocationByKey: Map<string, Allocation>,
   dayBusy: Set<string>,
-  assignmentCounts: Map<string, number>,
-  maxAssignmentsPerTeacher: number,
+  balance: BalanceTracker,
   notifications: Array<{ teacherId: string; message: string }>
 ): void {
   for (const role of ALLOCATION_ROLES) {
@@ -781,8 +903,7 @@ function assignGenericTeachers(
           pair.room,
           alloc,
           dayBusy,
-          assignmentCounts,
-          maxAssignmentsPerTeacher
+          balance
         )
       );
 
@@ -794,7 +915,7 @@ function assignGenericTeachers(
         pool = candidates;
       }
 
-      const selected = pickLeastUsedRandom(pool, assignmentCounts);
+      const selected = pickLeastUsedRandom(pool, balance, pair.exam.date);
       if (!selected) continue;
 
       assignTeacherToSlot(
@@ -804,7 +925,7 @@ function assignGenericTeachers(
         pair.exam,
         pair.room,
         dayBusy,
-        assignmentCounts,
+        balance,
         notifications
       );
       usedInRound.add(selected.id);
@@ -898,11 +1019,8 @@ export function autoAllocateAll(
   const examById = new Map(exams.map(e => [e.id, e]));
   const scopeExamIds = new Set(pairs.map(pair => pair.exam.id));
   const dayBusy = new Set<string>();
-  const assignmentCounts = new Map<string, number>();
 
-  // Initialize from existing allocations:
-  // - dayBusy considera toda a grelha (evitar dupla no mesmo dia/período)
-  // - assignmentCounts considera o scope da execução (max por docente no scope)
+  // dayBusy considera toda a grelha já atribuída (evitar dupla no mesmo dia/período)
   existingAllocations.forEach(alloc => {
     const ex = examById.get(alloc.examId);
     if (!ex) return;
@@ -910,34 +1028,14 @@ export function autoAllocateAll(
     const invigilator1Id = normalizeAssignedTeacherId(alloc.invigilator1Id);
     const invigilator2Id = normalizeAssignedTeacherId(alloc.invigilator2Id);
     const substituteId = normalizeAssignedTeacherId(alloc.substituteId);
-    if (invigilator1Id) {
-      dayBusy.add(`${invigilator1Id}@@${ex.date}@@${period}`);
-      if (scopeExamIds.has(ex.id)) {
-        assignmentCounts.set(invigilator1Id, (assignmentCounts.get(invigilator1Id) || 0) + 1);
-      }
-    }
-    if (invigilator2Id) {
-      dayBusy.add(`${invigilator2Id}@@${ex.date}@@${period}`);
-      if (scopeExamIds.has(ex.id)) {
-        assignmentCounts.set(invigilator2Id, (assignmentCounts.get(invigilator2Id) || 0) + 1);
-      }
-    }
-    if (substituteId) {
-      dayBusy.add(`${substituteId}@@${ex.date}@@${period}`);
-      if (scopeExamIds.has(ex.id)) {
-        assignmentCounts.set(substituteId, (assignmentCounts.get(substituteId) || 0) + 1);
-      }
-    }
+    if (invigilator1Id) dayBusy.add(`${invigilator1Id}@@${ex.date}@@${period}`);
+    if (invigilator2Id) dayBusy.add(`${invigilator2Id}@@${ex.date}@@${period}`);
+    if (substituteId) dayBusy.add(`${substituteId}@@${ex.date}@@${period}`);
   });
 
   const rolePriorityById = buildRolePriorityMap(roles);
   const basePool = teachers.filter(teacher => teacher.available && hasNoSpecialRole(teacher));
   const cargoPool = teachers.filter(teacher => teacher.available && hasSpecialRole(teacher));
-  teachers.filter(t => t.available).forEach(teacher => {
-    if (!assignmentCounts.has(teacher.id)) {
-      assignmentCounts.set(teacher.id, 0);
-    }
-  });
 
   for (const pair of allPairs) {
     const key = allocationKey(pair.exam.id, pair.room.id);
@@ -952,21 +1050,21 @@ export function autoAllocateAll(
     });
   }
 
-  // Calcular ocupação atual do scope
-  let existingAssignedCount = 0;
-  for (const pair of pairs) {
-    const key = allocationKey(pair.exam.id, pair.room.id);
-    const alloc = targetAllocationByKey.get(key)!;
-    if (alloc.invigilator1Id) existingAssignedCount++;
-    if (alloc.invigilator2Id) existingAssignedCount++;
-    if (alloc.substituteId) existingAssignedCount++;
-  }
-  const totalSlots = pairs.length * 3;
-  const remainingSlots = totalSlots - existingAssignedCount;
-  const availableTeachersCount = Math.max(basePool.length, 1);
-  const maxAssignmentsPerTeacher = Math.ceil(totalSlots / availableTeachersCount);
+  // Estado de equilíbrio: o limite global considera o histórico de cada docente
+  // e o limite diário considera as vagas de cada dia do scope.
+  const balance = buildBalanceTracker(
+    teachers,
+    pairs,
+    existingAllocations,
+    examById,
+    scopeExamIds,
+    basePool
+  );
+  const scopeSlots = pairs.length * ALLOCATION_ROLES.length;
+  const scopeAssignedCount = [...balance.scopeCounts.values()].reduce((sum, count) => sum + count, 0);
+  const remainingSlots = scopeSlots - scopeAssignedCount;
   warnings.push(
-    `Máximo de vigilâncias por docente: ${maxAssignmentsPerTeacher} (${totalSlots} vagas totais no scope; ${existingAssignedCount} já atribuídas; ${remainingSlots} por preencher; ${basePool.length} docentes elegíveis).`
+    `Equilíbrio de vigilâncias: máximo total ${balance.maxTotal} por docente (${scopeSlots} vagas no scope; ${scopeAssignedCount} já atribuídas; ${remainingSlots} por preencher; ${balance.eligibleCount} docentes elegíveis; histórico já contabilizado). Limites diários: ${[...balance.maxPerDayByDate.entries()].map(([date, max]) => `${date}=${max}`).join(", ")}.`
   );
 
   const restrictedTeacherIds = new Set(
@@ -988,8 +1086,7 @@ export function autoAllocateAll(
     teachers,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     warnings,
     notifications,
     isOnlyDateMode
@@ -1001,8 +1098,7 @@ export function autoAllocateAll(
     restrictedTeachers,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     notifications,
     restrictEeToNonEeExams,
     isOnlyDateMode
@@ -1014,8 +1110,7 @@ export function autoAllocateAll(
     genericPool,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     notifications
   );
 
@@ -1025,8 +1120,7 @@ export function autoAllocateAll(
     teachers,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     notifications,
     warnings
   );
@@ -1039,8 +1133,7 @@ export function autoAllocateAll(
       rolePriorityById,
       targetAllocationByKey,
       dayBusy,
-      assignmentCounts,
-      maxAssignmentsPerTeacher,
+      balance,
       notifications,
       restrictEeToNonEeExams,
       isOnlyDateMode
@@ -1099,30 +1192,9 @@ export function autoAllocate(
     if (substituteId) dayBusy.add(`${substituteId}@@${ex.date}@@${period}`);
   });
 
-  const assignmentCounts = new Map<string, number>();
-  currentExamAllocations.forEach(alloc => {
-    const invigilator1Id = normalizeAssignedTeacherId(alloc.invigilator1Id);
-    const invigilator2Id = normalizeAssignedTeacherId(alloc.invigilator2Id);
-    const substituteId = normalizeAssignedTeacherId(alloc.substituteId);
-    if (invigilator1Id) {
-      assignmentCounts.set(invigilator1Id, (assignmentCounts.get(invigilator1Id) || 0) + 1);
-    }
-    if (invigilator2Id) {
-      assignmentCounts.set(invigilator2Id, (assignmentCounts.get(invigilator2Id) || 0) + 1);
-    }
-    if (substituteId) {
-      assignmentCounts.set(substituteId, (assignmentCounts.get(substituteId) || 0) + 1);
-    }
-  });
-
   const rolePriorityById = buildRolePriorityMap(roles);
   const basePool = teachers.filter(teacher => teacher.available && hasNoSpecialRole(teacher));
   const cargoPool = teachers.filter(teacher => teacher.available && hasSpecialRole(teacher));
-  teachers.filter(t => t.available).forEach(teacher => {
-    if (!assignmentCounts.has(teacher.id)) {
-      assignmentCounts.set(teacher.id, 0);
-    }
-  });
 
   let assignedCount = 0;
   for (const pair of pairs) {
@@ -1142,8 +1214,21 @@ export function autoAllocate(
     if (alloc.substituteId) assignedCount++;
   }
 
-  const totalSlots = pairs.length * 3;
-  const maxAssignmentsPerTeacher = Math.ceil(totalSlots / Math.max(basePool.length, 1));
+  // Estado de equilíbrio: o limite global considera o histórico de cada docente
+  // e o limite diário considera as vagas do dia do exame.
+  const balance = buildBalanceTracker(
+    teachers,
+    pairs,
+    allAllocations,
+    examById,
+    new Set([exam.id]),
+    basePool
+  );
+  const scopeSlots = pairs.length * ALLOCATION_ROLES.length;
+  const scopeAssignedCount = [...balance.scopeCounts.values()].reduce((sum, count) => sum + count, 0);
+  warnings.push(
+    `Equilíbrio de vigilâncias: máximo total ${balance.maxTotal} por docente (${scopeSlots} vagas no exame; ${scopeAssignedCount} já atribuídas; ${scopeSlots - scopeAssignedCount} por preencher; ${balance.eligibleCount} docentes elegíveis; histórico já contabilizado).`
+  );
 
   const restrictedTeachers = basePool.filter(teacher => !teacher.EE && teacher.unavailabilities && teacher.unavailabilities.length > 0);
   const genericPool = basePool.filter(
@@ -1158,8 +1243,7 @@ export function autoAllocate(
     teachers,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     warnings,
     notifications,
     isOnlyDateMode
@@ -1170,8 +1254,7 @@ export function autoAllocate(
     restrictedTeachers,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     notifications,
     restrictEeToNonEeExams,
     isOnlyDateMode
@@ -1182,8 +1265,7 @@ export function autoAllocate(
     genericPool,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     notifications
   );
 
@@ -1192,8 +1274,7 @@ export function autoAllocate(
     teachers,
     targetAllocationByKey,
     dayBusy,
-    assignmentCounts,
-    maxAssignmentsPerTeacher,
+    balance,
     notifications,
     warnings
   );
@@ -1205,8 +1286,7 @@ export function autoAllocate(
       rolePriorityById,
       targetAllocationByKey,
       dayBusy,
-      assignmentCounts,
-      maxAssignmentsPerTeacher,
+      balance,
       notifications,
       restrictEeToNonEeExams,
       isOnlyDateMode
