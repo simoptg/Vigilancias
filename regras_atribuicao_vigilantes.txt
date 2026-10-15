@@ -1,22 +1,28 @@
 # Regras de Atribuição de Vigilantes e Suplentes (Implementação Atual)
 
 ## 1) Regras Estruturais (sempre ativas)
-1. **Não apagar atribuições existentes**  
-   O algoritmo não remove automaticamente uma atribuição já gravada para “abrir vaga”.
-2. **Um docente por dia**  
+1. **Não apagar atribuições existentes**
+   O algoritmo não remove automaticamente uma atribuição já gravada para "abrir vaga".
+2. **Um docente por dia**
    O mesmo docente não pode ficar atribuído no mesmo dia nem no período igual nem no período oposto.
-3. **Um docente por sala/escala**  
+   (Na prática, cada docente fica com no máximo 1 vigilância por dia.)
+3. **Um docente por sala/escala**
    O mesmo docente não pode ocupar mais de um papel na mesma combinação exame+sala.
-4. **Conflito de disciplina**  
+4. **Conflito de disciplina**
    Docente não pode vigiar exame da sua disciplina/grupo disciplinar.
-5. **Disponibilidade**  
+5. **Disponibilidade**
    Só docentes com `available = true` entram no universo elegível.
-6. **Indisponibilidades registadas**  
+6. **Indisponibilidades registadas**
    Se o docente estiver indisponível para o slot do exame, não é elegível.
-7. **Docente `PISO_ZERO = true`**  
+7. **Docente `PISO_ZERO = true`**
    Só pode ser colocado em sala de piso 0/rés-do-chão.
-8. **Normalização de IDs inválidos de docente**  
+8. **Normalização de IDs inválidos de docente**
    Valores vazios, `"null"` e `"undefined"` são tratados como ausência de docente.
+9. **Limite de equilíbrio por docente**
+   Um docente só é atribuído se estiver dentro dos limites global e diário (secção 2).
+
+Estas regras são verificadas em **todas** as fases. A única exceção é o `Vigilante 1` de exame EE,
+que é obrigatório e ignora apenas o limite de equilíbrio (regra 9), continuando sujeito às restantes.
 
 ## 2) Cálculo do máximo de vigilâncias por docente (equilíbrio)
 O cálculo verifica sempre duas dimensões em simultâneo: o **total já realizado por cada docente**
@@ -38,6 +44,9 @@ O cálculo verifica sempre duas dimensões em simultâneo: o **total já realiza
 - **Exceção**: o `Vigilante 1` de exame EE é obrigatório e ignora o limite de equilíbrio
   (continua sujeito às restantes regras estruturais, incluindo a regra de um docente por dia).
 
+As contagens de equilíbrio incluem o histórico de **todas as datas**, mesmo quando a execução
+está limitada a um dia específico (`onlyDate`).
+
 ## 3) Definição de Exame EE
 Um exame é tratado como EE quando:
 - `exam.EE === true`, **ou**
@@ -45,39 +54,113 @@ Um exame é tratado como EE quando:
 
 ## 4) Regras EE (Educação Especial)
 
-### 4.1 Modo dia específico (`onlyDate`)
-1. **Obrigatório**: cada sala de exame EE deve ter docente EE em **Vigilante 1**.
-2. **Restrição**: docente EE **não** é usado em `Vigilante 2` nem `Suplente` de exame EE.
-3. Se já existir atribuição gravada em `Vigilante 1`, essa atribuição é mantida.
+### 4.1 Pools de docentes EE
+- Os docentes EE são divididos em **EE sem cargo** e **EE com cargo**.
+- A seleção tenta primeiro o pool **EE sem cargo**; só se este não tiver candidato elegível
+  é tentado o pool **EE com cargo**.
 
-### 4.2 Modo global (todas as datas no scope)
-1. **Obrigatório**: cada sala de exame EE deve ter docente EE em **Vigilante 1**.
-2. **Suplente EE opcional**: em exame EE, pode existir EE em `Suplente` quando houver elegibilidade/capacidade.
-3. Docente EE **nunca** é colocado em `Vigilante 2` de exame EE.
+### 4.2 Papéis permitidos a docentes EE em exames EE
+| Papel | Modo dia específico (`onlyDate`) | Modo global (todas as datas) |
+|-------|----------------------------------|------------------------------|
+| Vigilante 1 | Obrigatório (docente EE) | Obrigatório (docente EE) |
+| Vigilante 2 | Docente EE não permitido | Docente EE não permitido |
+| Suplente | Docente EE não usado | Docente EE opcional |
 
-### 4.3 EE em salas de piso 0
+- `Vigilante 1` de exame EE é **reservado a docentes EE**: as fases 3 e 5 saltam explicitamente
+  este papel em exames EE.
+- O filtro de papel EE é aplicado nas fases 1, 2 e 5 (ver secção 9.1 para a exceção da fase 4).
+
+### 4.3 Atribuições já existentes em exames EE
+- Se `Vigilante 1` já estiver preenchido, é mantido.
+  - Se o docente existente **não** for EE, é emitido aviso e a atribuição mantém-se.
+- Em modo dia específico, se `Vigilante 2`/`Suplente` de uma sala EE tiver docente EE,
+  é emitido aviso e a atribuição mantém-se (não é removida).
+
+### 4.4 Avisos EE
+- `Não existem docentes EE disponíveis para atribuir aos exames EE.` (quando não há pool EE).
+- `Sem docente EE disponível para Vigilante 1 na {sala} ({exame}, {data}).`
+- `Sem docente EE disponível para Vigilante 1 na {sala} ({exame}, {data}) após fase EE restante.`
+
+### 4.5 EE em salas de piso 0
 Em exames EE realizados em sala de piso 0:
 1. Aplica-se a prioridade global de piso 0 (secção 5).
 2. Se existirem docentes EE com `PISO_ZERO=true` elegíveis, são tentados primeiro.
 3. Se não existirem elegíveis com `PISO_ZERO=true`, o algoritmo usa os restantes EE elegíveis.
 
 ## 5) Regras de Piso 0 (comportamento global)
-1. Em sala **não piso 0**, docentes `PISO_ZERO=true` são excluídos.
-2. Em sala **piso 0**, podem ser usados docentes `PISO_ZERO=true` e também docentes sem essa limitação.
-3. Exceção de prioridade: em sala piso 0, dá-se prioridade a qualquer docente com `PISO_ZERO=true`.
+Deteção de piso 0: `room.floor` normalizado igual a `"0"`, `"piso 0"`, `"rés-do-chão"` ou `"res-do-chao"`.
+1. Em sala **não piso 0**, docentes `PISO_ZERO=true` são excluídos do pool de candidatos.
+2. Em sala **piso 0**, se existir pelo menos um candidato com `PISO_ZERO=true`, **só** esses candidatos
+   são considerados; caso contrário, são usados todos os candidatos.
+3. Estas regras aplicam-se em todas as fases (EE, indisponibilidades, regulares e cargo).
 
 ## 6) Docentes com cargos especiais
-1. Só entram após esgotar os docentes regulares nas fases anteriores.
-2. Seleção por prioridade de cargo (maior prioridade primeiro).
+1. `hasSpecialRole(teacher)` = `teacher.role` preenchido após normalização.
+2. Só entram na fase 5 (último recurso), depois de esgotados os docentes regulares e EE.
+3. Seleção por **prioridade de cargo** (maior prioridade primeiro), agrupada em tiers.
+   Dentro do mesmo tier aplica-se a seleção equilibrada da secção 2.
+4. A prioridade é resolvida por `role.id` **ou** `role.name` (exato e normalizado),
+   pelo que cargos novos são reconhecidos por qualquer uma das formas.
+5. Docentes EE com cargo:
+   - nunca preenchem `Vigilante 1` de exame EE (reservado às fases 1 e 4);
+   - em exames **não EE** não são usados (`restrictEeToNonEeExams = true`);
+   - em exames **EE** só nos papéis permitidos da secção 4.2.
+6. Estão sujeitos a todas as regras estruturais e aos limites de equilíbrio.
 
 ## 7) Ordem de atribuição (pipeline)
-1. **Fase 1**: EE em exames EE  
-   - V1 EE obrigatório em todas as salas EE; suplente EE opcional apenas em modo global.
-2. **Fase 2**: Docentes com indisponibilidades (quando houver slots compatíveis).
-3. **Fase 3**: Docentes regulares (sem indisponibilidades, sem cargo, não EE).
-4. **Fase 4**: Docentes EE restantes para vagas livres (sem necessidade de manter restrições EE).
-5. **Fase 5**: Docentes com cargo por prioridade.
+Os papéis são preenchidos sempre na ordem: **Vigilante 1 → Vigilante 2 → Suplente**.
 
-## 8) Notas operacionais
-1. Se uma regra obrigatória não puder ser satisfeita (ex.: sem EE elegível para V1 em exame EE), o sistema emite aviso explícito.
-2. O sistema preserva consistência entre API e scheduler para IDs de docente inválidos.
+1. **Fase 1 — EE em exames EE**
+   - **1a**: `Vigilante 1` obrigatório em todas as salas de exames EE.
+   - **1b** (apenas modo global): `Suplente` EE opcional em salas de exames EE.
+   - `Vigilante 2` de exame EE nunca recebe docente EE.
+   - Exceção de equilíbrio: o `Vigilante 1` EE é atribuído ignorando o limite de equilíbrio.
+2. **Fase 2 — Docentes com indisponibilidades**
+   - Pool: docentes do pool base, **não EE**, com `unavailabilities` registadas.
+   - Executada por docente (não par a par): cada docente preenche até ao seu limite remanescente
+     (`maxTotal - totalAtribuido`), alternando os papéis e escolhendo aleatoriamente entre os pares elegíveis.
+3. **Fase 3 — Docentes regulares**
+   - Pool: docentes do pool base **sem indisponibilidades registadas e não EE**.
+   - Preenchimento par a par e por papel, com seleção equilibrada.
+4. **Fase 4 — Docentes EE restantes**
+   - Primeiro, reforço de `Vigilante 1` EE em salas EE que ainda não tenham docente EE.
+   - Depois, preenchimento de todas as vagas livres, por papel, com o pool EE restante.
+5. **Fase 5 — Docentes com cargo**
+   - Por ordem de prioridade de cargo (maior primeiro).
+   - Nunca preenche `Vigilante 1` de exame EE.
+
+### 7.1 Rodízio dentro de cada papel
+Nas fases 3, 4 e 5 é mantido, por papel, um conjunto de docentes já usados nesse papel (`usedInRound`).
+Um docente já usado só volta a ser considerado quando o pool de candidatos desse papel se esgotar,
+momento em que o conjunto é reiniciado.
+
+### 7.2 Limites de equilíbrio
+São aplicados em todas as fases (secção 2), com a única exceção do `Vigilante 1` EE obrigatório.
+
+## 8) Ordem de processamento de exames e salas
+1. **Exames**: exames EE primeiro; depois por `date`, `time`, `name` e `id`.
+2. **Salas por exame**: ordenadas por `priority` crescente.
+3. Cada par exame+sala origina sempre **3 slots**: Vigilante 1, Vigilante 2 e Suplente.
+
+## 9) Notas operacionais e desvios conhecidos
+
+### 9.1 Fase 4 e o papel EE em exames EE
+A fase 4 (último recurso com docentes EE) **não aplica** o filtro de papel da secção 4.2.
+Como consequência, um docente EE pode, nesta fase, vir a preencher `Vigilante 2` de um exame EE,
+ao contrário do que acontece nas fases 1, 2 e 5.
+
+### 9.2 Avisos emitidos
+1. **Equilíbrio**: é emitido um aviso com o máximo total por docente, o nº de vagas do scope,
+   as já atribuídas, as por preencher, os docentes elegíveis e os limites diários por data.
+2. **Vagas não preenchidas**: por cada slot sem docente é emitido
+   `Sem docente elegível para {papel} em {sala} ({exame}, {data}){sufixo}.`,
+   em que o sufixo indica se já houve recurso a docentes EE e/ou com cargo.
+3. **Regras obrigatórias não satisfeitas**: sempre que uma regra obrigatória (ex.: EE em `Vigilante 1`)
+   não possa ser cumprida, é emitido aviso explícito.
+
+### 9.3 Limitações inerentes
+- Devido à regra "um docente por dia", um dia com mais vagas do que docentes elegíveis disponíveis
+  fica inevitavelmente com vagas por preencher.
+- Nenhuma atribuição existente é removida, pelo que o equilíbrio é calculado sobre o histórico
+  já gravado e não o reescreve.
+- O sistema preserva consistência entre API e scheduler para IDs de docente inválidos.
