@@ -804,6 +804,109 @@ export default function ReportManager({
     doc.save(`lista_vigilancias_${dateSuffix}.pdf`);
   };
 
+  const handleExportTeacherVigilanceTotalsPDF = () => {
+    const filterDate = filterMode === 'single' && selectedDate ? selectedDate : null;
+    const records = getValidAllocationRecords(filterDate);
+    const countsByTeacher = new Map<string, { invigilator: number; substitute: number }>();
+
+    records.forEach(({ alloc }) => {
+      if (alloc.invigilator1Id) {
+        const counts = countsByTeacher.get(alloc.invigilator1Id) || { invigilator: 0, substitute: 0 };
+        counts.invigilator += 1;
+        countsByTeacher.set(alloc.invigilator1Id, counts);
+      }
+      if (alloc.invigilator2Id) {
+        const counts = countsByTeacher.get(alloc.invigilator2Id) || { invigilator: 0, substitute: 0 };
+        counts.invigilator += 1;
+        countsByTeacher.set(alloc.invigilator2Id, counts);
+      }
+      if (alloc.substituteId) {
+        const counts = countsByTeacher.get(alloc.substituteId) || { invigilator: 0, substitute: 0 };
+        counts.substitute += 1;
+        countsByTeacher.set(alloc.substituteId, counts);
+      }
+    });
+
+    if (countsByTeacher.size === 0) {
+      alert(lang === 'pt' ? 'Não existem vigilâncias registadas para exportar.' : 'No invigilation assignments to export.');
+      return;
+    }
+
+    const teacherById = new Map((Array.isArray(teachers) ? teachers : []).map(teacher => [teacher.id, teacher]));
+    const rows = [...countsByTeacher.entries()]
+      .map(([teacherId, counts]) => {
+        const teacher = teacherById.get(teacherId);
+        const profile = teacher
+          ? `(${teacher.subject_group}${teacher.subject ? ` - ${teacher.subject}` : ''})`
+          : '';
+        return {
+          name: teacher?.name || teacherId,
+          profile,
+          total: counts.invigilator + counts.substitute,
+          invigilator: counts.invigilator,
+          substitute: counts.substitute
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const title = lang === 'pt' ? 'Vigilâncias realizadas por docente' : 'Invigilations by teacher';
+    const subtitle = filterDate
+      ? `${lang === 'pt' ? 'Data:' : 'Date:'} ${filterDate}`
+      : `${lang === 'pt' ? 'Todas as datas' : 'All dates'} | ${new Date().toLocaleDateString()}`;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(30, 64, 175);
+    doc.text(title, 14, 18);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(subtitle, 14, 25);
+
+    autoTable(doc, {
+      startY: 32,
+      head: [[
+        lang === 'pt' ? 'PROFESSOR' : 'TEACHER',
+        'TOTAL',
+        lang === 'pt' ? 'VIGILANTE' : 'INVIGILATOR',
+        lang === 'pt' ? 'SUPLENTE' : 'SUBSTITUTE'
+      ]],
+      body: rows.map(row => [
+        row.profile ? `${row.name}\n${row.profile}` : row.name,
+        String(row.total),
+        String(row.invigilator),
+        String(row.substitute)
+      ]),
+      theme: 'grid',
+      headStyles: {
+        fillColor: [243, 244, 246],
+        textColor: [71, 85, 105],
+        fontStyle: 'bold',
+        fontSize: 9,
+        cellPadding: 3.5
+      },
+      bodyStyles: {
+        textColor: [30, 41, 59],
+        fontSize: 10,
+        cellPadding: 3.5,
+        lineColor: [220, 225, 231],
+        lineWidth: 0.2,
+        minCellHeight: 15
+      },
+      columnStyles: {
+        0: { cellWidth: 145 },
+        1: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
+        2: { cellWidth: 42, halign: 'center' },
+        3: { cellWidth: 42, halign: 'center' }
+      },
+      margin: { left: 14, right: 14 }
+    });
+
+    const dateSuffix = filterDate || new Date().toISOString().slice(0, 10);
+    doc.save(`vigilancias_por_docente_${dateSuffix}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -867,6 +970,13 @@ export default function ReportManager({
         >
           <Download className="h-4 w-4" />
           <span>{lang === 'pt' ? 'Exportar Lista de Vigilâncias (PDF)' : 'Export Vigilance List (PDF)'}</span>
+        </button>
+        <button
+          onClick={handleExportTeacherVigilanceTotalsPDF}
+          className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition cursor-pointer"
+        >
+          <Download className="h-4 w-4" />
+          <span>{lang === 'pt' ? 'Vigilâncias por Docente (PDF)' : 'Invigilations by Teacher (PDF)'}</span>
         </button>
       </div>
 
