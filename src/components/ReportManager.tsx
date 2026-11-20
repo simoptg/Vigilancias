@@ -827,20 +827,18 @@ export default function ReportManager({
       }
     });
 
-    if (countsByTeacher.size === 0) {
-      alert(lang === 'pt' ? 'Não existem vigilâncias registadas para exportar.' : 'No invigilation assignments to export.');
+    const teacherList = Array.isArray(teachers) ? teachers : [];
+    if (teacherList.length === 0) {
+      alert(lang === 'pt' ? 'Não existem docentes para exportar.' : 'No teachers to export.');
       return;
     }
 
-    const teacherById = new Map((Array.isArray(teachers) ? teachers : []).map(teacher => [teacher.id, teacher]));
-    const rows = [...countsByTeacher.entries()]
-      .map(([teacherId, counts]) => {
-        const teacher = teacherById.get(teacherId);
-        const profile = teacher
-          ? `(${teacher.subject_group}${teacher.subject ? ` - ${teacher.subject}` : ''})`
-          : '';
+    const rows = teacherList
+      .map(teacher => {
+        const counts = countsByTeacher.get(teacher.id) || { invigilator: 0, substitute: 0 };
+        const profile = `(${teacher.subject_group}${teacher.subject ? ` - ${teacher.subject}` : ''})`;
         return {
-          name: teacher?.name || teacherId,
+          name: teacher.name,
           profile,
           total: counts.invigilator + counts.substitute,
           invigilator: counts.invigilator,
