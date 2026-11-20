@@ -181,17 +181,21 @@ export default function ExamManager({
       format: 'a4'
     });
 
-    doc.setFillColor(30, 41, 59);
+    // Faixa de título em tom claro para poupar tinta na impressão
+    doc.setFillColor(244, 247, 251);
     doc.rect(0, 0, 297, 38, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.4);
+    doc.line(0, 38, 297, 38);
 
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
     doc.text(title, 15, 16);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.setTextColor(203, 213, 225);
+    doc.setTextColor(71, 85, 105);
     doc.text(subtitle, 15, 24);
     doc.text(timestamp, 15, 30);
 
@@ -225,8 +229,8 @@ export default function ExamManager({
       body: body,
       theme: 'striped',
       headStyles: {
-        fillColor: [37, 99, 235],
-        textColor: [255, 255, 255],
+        fillColor: [219, 234, 254],
+        textColor: [30, 64, 175],
         fontStyle: 'bold',
         fontSize: 9
       },

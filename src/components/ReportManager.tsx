@@ -193,7 +193,7 @@ export default function ReportManager({
       }
 
       // Teacher Header
-      doc.setFillColor(241, 245, 249);
+      doc.setFillColor(248, 250, 252);
       doc.roundedRect(10, currentY - 5, 190, headerHeight, 3, 3, 'F');
       doc.setTextColor(15, 23, 42);
       doc.setFontSize(12);
@@ -235,7 +235,7 @@ export default function ReportManager({
             currentY = 20;
             // Repeat teacher name at top of new page with continuation label
             const continuationHeaderHeight = hasRole ? 35 : 25;
-            doc.setFillColor(241, 245, 249);
+            doc.setFillColor(248, 250, 252);
             doc.roundedRect(10, currentY - 5, 190, continuationHeaderHeight, 3, 3, 'F');
             doc.setTextColor(15, 23, 42);
             doc.setFontSize(12);
@@ -370,17 +370,25 @@ export default function ReportManager({
 
       // Helper to draw the main slot header
       const drawMainSlotHeader = () => {
-        let startY = 12;
-        doc.setFillColor(15, 23, 42);
-        doc.rect(10, startY, 190, 34, 'F');
-        doc.setTextColor(255, 255, 255);
+        const startY = 12;
+        // Cabeçalho em tom claro para poupar tinta na impressão
+        doc.setFillColor(244, 247, 251);
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.3);
+        doc.rect(10, startY, 190, 34, 'FD');
+        doc.setFont('helvetica', 'bold');
         doc.setFontSize(14);
+        doc.setTextColor(15, 23, 42);
         doc.text(schoolName, 15, startY + 10);
+        doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
         doc.text(schoolYearLabel, 15, startY + 17);
         doc.setFontSize(11);
+        doc.setTextColor(30, 64, 175);
         doc.text(title, 15, startY + 24);
         doc.setFontSize(10);
+        doc.setTextColor(71, 85, 105);
         doc.text(
           lang === 'pt'
             ? `Dia: ${slot.date} | Hora: ${slot.time}`
@@ -415,10 +423,12 @@ export default function ReportManager({
           currentY = drawMainSlotHeader(); // Always full header, no continuation label
         }
 
-        // Draw exam header
-        doc.setFillColor(59, 130, 246);
+        // Draw exam header (fundo claro com barra de destaque lateral)
+        doc.setFillColor(219, 234, 254);
         doc.rect(10, currentY, 190, examHeaderHeight, 'F');
-        doc.setTextColor(255, 255, 255);
+        doc.setFillColor(96, 165, 250);
+        doc.rect(10, currentY, 1.5, examHeaderHeight, 'F');
+        doc.setTextColor(30, 64, 175);
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.text(examLabelLines, 13, currentY + 6);
@@ -437,8 +447,8 @@ export default function ReportManager({
           }
 
           // Draw room separator
-          doc.setDrawColor(59, 130, 246);
-          doc.setLineWidth(0.5);
+          doc.setDrawColor(147, 197, 253);
+          doc.setLineWidth(0.3);
           doc.line(15, currentY, 195, currentY);
           doc.setDrawColor(0, 0, 0);
           currentY += 4;
@@ -507,10 +517,12 @@ export default function ReportManager({
           currentY = drawMainSlotHeader();
         }
 
-        // Draw substitutes header
-        doc.setFillColor(234, 88, 12);
+        // Draw substitutes header (fundo claro com barra de destaque lateral)
+        doc.setFillColor(255, 237, 213);
         doc.rect(10, currentY, 190, 12, 'F');
-        doc.setTextColor(255, 255, 255);
+        doc.setFillColor(251, 146, 60);
+        doc.rect(10, currentY, 1.5, 12, 'F');
+        doc.setTextColor(154, 52, 18);
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
         doc.text(lang === 'pt' ? 'Suplentes' : 'Substitutes', 15, currentY + 8);
@@ -669,18 +681,25 @@ export default function ReportManager({
     const hasDateFilter = filterMode === 'single' && selectedDate;
     const headerHeight = hasDateFilter ? 34 : 28;
 
-    // Draw title header
-    doc.setFillColor(15, 23, 42);
-    doc.rect(10, 10, 190, headerHeight, 'F');
-    doc.setTextColor(255, 255, 255);
+    // Draw title header (tom claro para poupar tinta na impressão)
+    doc.setFillColor(244, 247, 251);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.3);
+    doc.rect(10, 10, 190, headerHeight, 'FD');
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
+    doc.setTextColor(15, 23, 42);
     doc.text(schoolName, 14, 20);
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
     doc.text(schoolYearLabel, 14, 27);
     doc.setFontSize(12);
+    doc.setTextColor(30, 64, 175);
     doc.text(title, 14, 33);
     if (hasDateFilter) {
       doc.setFontSize(10);
+      doc.setTextColor(71, 85, 105);
       doc.text(`${lang === 'pt' ? 'Filtro: ' : 'Filter: '}${selectedDate}`, 14, 39);
       currentY = 50;
     } else {
@@ -725,7 +744,7 @@ export default function ReportManager({
       }
 
       // Draw teacher header
-      doc.setFillColor(241, 245, 249);
+      doc.setFillColor(248, 250, 252);
       doc.rect(10, currentY, 190, 20, 'F');
       doc.setTextColor(15, 23, 42);
       doc.setFontSize(11);
@@ -746,7 +765,7 @@ export default function ReportManager({
           pageCount++;
           currentY = 20;
           // Repeat teacher header on new page
-          doc.setFillColor(241, 245, 249);
+          doc.setFillColor(248, 250, 252);
           doc.rect(10, currentY, 190, 20, 'F');
           doc.setTextColor(15, 23, 42);
           doc.setFontSize(11);

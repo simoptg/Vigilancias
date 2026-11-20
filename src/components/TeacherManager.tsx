@@ -554,7 +554,7 @@ export default function TeacherManager({
       body: data,
       startY: startY,
       theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] },
+      headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42] },
       styles: { fontSize: 8 }
     });
 
@@ -599,7 +599,7 @@ export default function TeacherManager({
           body: summaryData,
           startY: lastTableY + 10,
           theme: 'grid',
-          headStyles: { fillColor: [59, 130, 246] },
+          headStyles: { fillColor: [219, 234, 254], textColor: [30, 64, 175] },
           styles: { fontSize: 7 }
         });
       }
